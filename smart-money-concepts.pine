@@ -2345,238 +2345,213 @@ f_candlestick(_close, _open, _high, _low, _time, _tf, _bar, _plot, start, _show_
         filterbear = con_htfbear and con_ema_bear
         filterbull = con_htfbull and con_ema_bull
 
+        // Hoisted repeated per-group high/low aggregates (computed once per bar;
+        // side-effect-free, so unconditional computation is observationally identical).
+        s2h = math.max(_h2, _h1, _h0)
+        s2l = math.min(_l2, _l1, _l0)
+        s3h = math.max(_h3, _h2, _h1, _h0)
+        s3l = math.min(_l3, _l2, _l1, _l0)
+        s4h = math.max(_h4, _h3, _h2, _h1, _h0)
+        s4l = math.min(_l4, _l3, _l2, _l1, _l0)
+
         form_51 = filterbull and _o4 > _c4 and math.max(_o3, _c3, _o2, _c2, _o1, _c1) <= (_h4 + _l4) / 2 and math.min(_o3, _c3, _o2, _c2, _o1, _c1) >= _l4 and math.max(_h3, _h2, _h1) < math.min(_o4, _c0) and _c0 > _o4
         if form_51 and alert51
             text_ := 'Bullish 5 candle'
             found := true
             num := 5
             ploth := _o4
-            plotl := math.min(_l4, _l3, _l2, _l1, _l0)
+            plotl := s4l
             plott := _t4
-            singleh := math.max(_h4, _h3, _h2, _h1, _h0)
-            singlel := math.min(_l4, _l3, _l2, _l1, _l0)
+            singleh := s4h
+            singlel := s4l
             singleo := _o4
 
-        if not found and alert52 and text_ == ''
-            form_52 = filterbear and _o4 < _c4 and math.min(_o3, _c3, _o2, _c2, _o1, _c1) >= (_h4 + _l4) / 2 and math.max(_o3, _c3, _o2, _c2, _o1, _c1) <= _h4 and math.min(_l3, _l2, _l1) > math.max(_o4, _c0) and _c0 < _o4
-            if form_52
-                text_ := 'Bearish 5 candle'
-                found := true
-                num := -5
-                ploth := math.max(_h4, _h3, _h2, _h1, _h0)
-                plotl := _o4
-                plott := _t4
-                singleh := math.max(_h4, _h3, _h2, _h1, _h0)
-                singlel := math.min(_l4, _l3, _l2, _l1, _l0)
-                singleo := _o4
+        if not found and alert52 and text_ == '' and (filterbear and _o4 < _c4 and math.min(_o3, _c3, _o2, _c2, _o1, _c1) >= (_h4 + _l4) / 2 and math.max(_o3, _c3, _o2, _c2, _o1, _c1) <= _h4 and math.min(_l3, _l2, _l1) > math.max(_o4, _c0) and _c0 < _o4)
+            text_ := 'Bearish 5 candle'
+            found := true
+            num := -5
+            ploth := s4h
+            plotl := _o4
+            plott := _t4
+            singleh := s4h
+            singlel := s4l
+            singleo := _o4
 
-        if not found and alert41 and text_ == ''
-            form_41 = filterbull and _c3 < _o3 and _c2 >= _o2 and _c1 <= _o1 and _c0 > _o0 and _c0 > _o3 and math.max(_h2, _h1) < math.min(_o3, _c0) and math.max(_o2, _c1) <= (_h3 + _l3) / 2
-            if form_41
-                text_ := 'Bullish Horse Shoe'
-                found := true
-                num := 4
-                ploth := _o3
-                plotl := math.min(_l3, _l2, _l1, _l0)
-                plott := _t3
-                singleh := math.max(_h3, _h2, _h1, _h0)
-                singlel := math.min(_l3, _l2, _l1, _l0)
-                singleo := _o3
+        if not found and alert41 and text_ == '' and (filterbull and _c3 < _o3 and _c2 >= _o2 and _c1 <= _o1 and _c0 > _o0 and _c0 > _o3 and math.max(_h2, _h1) < math.min(_o3, _c0) and math.max(_o2, _c1) <= (_h3 + _l3) / 2)
+            text_ := 'Bullish Horse Shoe'
+            found := true
+            num := 4
+            ploth := _o3
+            plotl := s3l
+            plott := _t3
+            singleh := s3h
+            singlel := s3l
+            singleo := _o3
 
-        if not found and alert42 and text_ == ''
-            form_42 = filterbear and _c3 > _o3 and _c2 <= _o2 and _c1 >= _o1 and _c0 < _o0 and _c0 < _o3 and math.min(_l2, _l1) > math.max(_o3, _c0) and math.min(_o2, _c1) >= (_h3 + _l3) / 2
-            if form_42
-                text_ := 'Bearish Horse Shoe'
-                found := true
-                num := -4
-                ploth := math.max(_h3, _h2, _h1, _h0)
-                plotl := _o3
-                plott := _t3
-                singleh := math.max(_h3, _h2, _h1, _h0)
-                singlel := math.min(_l3, _l2, _l1, _l0)
-                singleo := _o3
+        if not found and alert42 and text_ == '' and (filterbear and _c3 > _o3 and _c2 <= _o2 and _c1 >= _o1 and _c0 < _o0 and _c0 < _o3 and math.min(_l2, _l1) > math.max(_o3, _c0) and math.min(_o2, _c1) >= (_h3 + _l3) / 2)
+            text_ := 'Bearish Horse Shoe'
+            found := true
+            num := -4
+            ploth := s3h
+            plotl := _o3
+            plott := _t3
+            singleh := s3h
+            singlel := s3l
+            singleo := _o3
 
-        if not found and alert43 and text_ == ''
-            form_43 = filterbull and _c3 < _o3 and _c2 < _o2 and _c1 > _o1 and _c0 > _o0 and _c0 > _o3 and math.max(_h2, _h1) < math.min(_o3, _c0) and math.max(_o2, _c1) <= (_h3 + _l3) / 2
-            if form_43
-                text_ := 'Bullish 4 candle'
-                found := true
-                num := 4
-                ploth := _o3
-                plotl := math.min(_l3, _l2, _l1, _l0)
-                plott := _t3
-                singleh := math.max(_h3, _h2, _h1, _h0)
-                singlel := math.min(_l3, _l2, _l1, _l0)
-                singleo := _o3
+        if not found and alert43 and text_ == '' and (filterbull and _c3 < _o3 and _c2 < _o2 and _c1 > _o1 and _c0 > _o0 and _c0 > _o3 and math.max(_h2, _h1) < math.min(_o3, _c0) and math.max(_o2, _c1) <= (_h3 + _l3) / 2)
+            text_ := 'Bullish 4 candle'
+            found := true
+            num := 4
+            ploth := _o3
+            plotl := s3l
+            plott := _t3
+            singleh := s3h
+            singlel := s3l
+            singleo := _o3
 
-        if not found and alert44 and text_ == ''
-            form_44 = filterbear and _c3 > _o3 and _c2 > _o2 and _c1 < _o1 and _c0 < _o0 and _c0 < _o3 and math.min(_l2, _l1) > math.max(_o3, _c0) and math.min(_o2, _c1) >= (_h3 + _l3) / 2
-            if form_44
-                text_ := 'Bearish 4 candle'
-                found := true
-                num := -4
-                ploth := math.max(_h3, _h2, _h1, _h0)
-                plotl := _o3
-                plott := _t3
-                singleh := math.max(_h3, _h2, _h1, _h0)
-                singlel := math.min(_l3, _l2, _l1, _l0)
-                singleo := _o3
+        if not found and alert44 and text_ == '' and (filterbear and _c3 > _o3 and _c2 > _o2 and _c1 < _o1 and _c0 < _o0 and _c0 < _o3 and math.min(_l2, _l1) > math.max(_o3, _c0) and math.min(_o2, _c1) >= (_h3 + _l3) / 2)
+            text_ := 'Bearish 4 candle'
+            found := true
+            num := -4
+            ploth := s3h
+            plotl := _o3
+            plott := _t3
+            singleh := s3h
+            singlel := s3l
+            singleo := _o3
 
-        if not found and alert31 and text_ == ''
-            form_31 = filterbull and _o2 > _c2 and _c1 > _o1 and _c2 <= _l1 and _o2 >= _h1 and _c0 > _o0 and _c0 > _h2 and not(_l2 == _l1 and _h2 == _h1)
-            if form_31
-                text_ := 'Bullish 3 inside up'
-                found := true
-                num := 3
-                ploth := _h2
-                plotl := math.min(_l2, _l1, _l0)
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert31 and text_ == '' and (filterbull and _o2 > _c2 and _c1 > _o1 and _c2 <= _l1 and _o2 >= _h1 and _c0 > _o0 and _c0 > _h2 and not(_l2 == _l1 and _h2 == _h1))
+            text_ := 'Bullish 3 inside up'
+            found := true
+            num := 3
+            ploth := _h2
+            plotl := s2l
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert32 and text_ == ''
-            form_32 = filterbear and _o2 < _c2 and _c1 < _o1 and _c2 >= _h1 and _o2 <= _l1 and _c0 < _o0 and _c0 < _l2 and not(_l2 == _l1 and _h2 == _h1)
-            if form_32
-                text_ := 'Bearish 3 inside down'
-                found := true
-                num := -3
-                ploth := math.max(_h2, _h1, _h0)
-                plotl := _l2
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert32 and text_ == '' and (filterbear and _o2 < _c2 and _c1 < _o1 and _c2 >= _h1 and _o2 <= _l1 and _c0 < _o0 and _c0 < _l2 and not(_l2 == _l1 and _h2 == _h1))
+            text_ := 'Bearish 3 inside down'
+            found := true
+            num := -3
+            ploth := s2h
+            plotl := _l2
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert33 and text_ == ''
-            form_33 = _o1 < _o2 and _o1 > _c2 and _o0 < _o1 and _o0 > _c1 and _c1 < _l2 and _c0 < _l1 and _c2 < 1.05 * _l2 and _c1 < 1.05 * _l1 and _c0 < 1.05 * _l0
-            if form_33
-                text_ := 'Bearish 3 Black Crows'
-                found := true
-                num := -3
-                ploth := _h2
-                plotl := _l0
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert33 and text_ == '' and (_o1 < _o2 and _o1 > _c2 and _o0 < _o1 and _o0 > _c1 and _c1 < _l2 and _c0 < _l1 and _c2 < 1.05 * _l2 and _c1 < 1.05 * _l1 and _c0 < 1.05 * _l0)
+            text_ := 'Bearish 3 Black Crows'
+            found := true
+            num := -3
+            ploth := _h2
+            plotl := _l0
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert34 and text_ == ''
-            form_34 = filterbear and _c2 > _o2 and math.min(_o1, _c1) > _c2 and _o0 < math.min(_o1, _c1) and _c0 < _o0 and _c0 < (_h2 + _l2) / 2 and _h1 > math.max(_h0, _h2)
-            if form_34
-                text_ := 'Bearish Evening Star'
-                found := true
-                num := -3
-                ploth := _h1
-                plotl := (_h2 + _l2) / 2
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert34 and text_ == '' and (filterbear and _c2 > _o2 and math.min(_o1, _c1) > _c2 and _o0 < math.min(_o1, _c1) and _c0 < _o0 and _c0 < (_h2 + _l2) / 2 and _h1 > math.max(_h0, _h2))
+            text_ := 'Bearish Evening Star'
+            found := true
+            num := -3
+            ploth := _h1
+            plotl := (_h2 + _l2) / 2
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert35 and text_ == ''
-            form_35 = filterbull and _o2 > _c2 and _o2 - _c2 > 0.6 * (_h2 - _l2) and _c2 > _o1 and math.abs(_o1 - _c1) < 0.5 * math.abs(_o2 - _c2) and _h1 - _l1 > 3 * (_c1 - _o1) and _c0 > _o0 and _o0 > math.max(_o1, _c1) and _c0 > (_h2 + _l2) / 2 and _l1 < math.min(_l0, _l2)
-            if form_35
-                text_ := 'Bullish Morning Star'
-                found := true
-                num := 3
-                ploth := (_h2 + _l2) / 2
-                plotl := _l1
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert35 and text_ == '' and (filterbull and _o2 > _c2 and _o2 - _c2 > 0.6 * (_h2 - _l2) and _c2 > _o1 and math.abs(_o1 - _c1) < 0.5 * math.abs(_o2 - _c2) and _h1 - _l1 > 3 * (_c1 - _o1) and _c0 > _o0 and _o0 > math.max(_o1, _c1) and _c0 > (_h2 + _l2) / 2 and _l1 < math.min(_l0, _l2))
+            text_ := 'Bullish Morning Star'
+            found := true
+            num := 3
+            ploth := (_h2 + _l2) / 2
+            plotl := _l1
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert36 and text_ == ''
-            form_36 = filterbull and _c1 >= _o1 and _o2 > _c2 and _c0 > _o0 and _l2 > _h1 and _l0 > _h1 and _l1 < math.min(_l0, _l2) and _c0 > _o2
-            if form_36
-                text_ := 'Bullish Abandone Baby'
-                found := true
-                num := 3
-                ploth := _o2
-                plotl := _l1
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert36 and text_ == '' and (filterbull and _c1 >= _o1 and _o2 > _c2 and _c0 > _o0 and _l2 > _h1 and _l0 > _h1 and _l1 < math.min(_l0, _l2) and _c0 > _o2)
+            text_ := 'Bullish Abandone Baby'
+            found := true
+            num := 3
+            ploth := _o2
+            plotl := _l1
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert37 and text1 != 'Bearish MeReT' and text_ == ''
-            form_37 = filterbear and _c2 > _o2 and _c1 < _o1 and _l1 > _o2 and _c0 < _o0 and _h1 > _h2 and _c0 < _o2
-            if form_37
-                text_ := 'Bearish 3 candle'
-                found := true
-                num := -3
-                ploth := math.max(_h2, _h1, _h0)
-                plotl := _o2
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert37 and text1 != 'Bearish MeReT' and text_ == '' and (filterbear and _c2 > _o2 and _c1 < _o1 and _l1 > _o2 and _c0 < _o0 and _h1 > _h2 and _c0 < _o2)
+            text_ := 'Bearish 3 candle'
+            found := true
+            num := -3
+            ploth := s2h
+            plotl := _o2
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert38 and text1 != 'Bullish MeReT' and text_ == ''
-            form_38 = filterbull and _c2 < _o2 and _c1 > _o1 and _h1 < _o2 and _c0 > _o0 and _l1 < _l2 and _c0 > _o2
-            if form_38
-                text_ := 'Bullish 3 candle'
-                found := true
-                num := 3
-                ploth := _o2
-                plotl := math.min(_l2, _l1, _l0)
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert38 and text1 != 'Bullish MeReT' and text_ == '' and (filterbull and _c2 < _o2 and _c1 > _o1 and _h1 < _o2 and _c0 > _o0 and _l1 < _l2 and _c0 > _o2)
+            text_ := 'Bullish 3 candle'
+            found := true
+            num := 3
+            ploth := _o2
+            plotl := s2l
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert39 and text_ == ''
-            form_39 = filterbear and _o2 > _c2 and _c1 > _o1 and _c1 > _h2 and _h0 >= _h2 and _h1 > _h0 and _c0 < _l1 and _c1 - _o1 > math.max(_h1 - _c1, _o1 - _l1)
-            if form_39
-                text_ := 'Bearish MeReT'
-                found := true
-                num := -3
-                ploth := _h1
-                plotl := _l1
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert39 and text_ == '' and (filterbear and _o2 > _c2 and _c1 > _o1 and _c1 > _h2 and _h0 >= _h2 and _h1 > _h0 and _c0 < _l1 and _c1 - _o1 > math.max(_h1 - _c1, _o1 - _l1))
+            text_ := 'Bearish MeReT'
+            found := true
+            num := -3
+            ploth := _h1
+            plotl := _l1
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert310 and text_ == ''
-            form_310 = filterbull and _o2 < _c2 and _c1 < _o1 and _c1 < _l2 and _l0 <= _l2 and _l1 < _l0 and _c0 > _h1 and _o1 - _c1 > math.max(_h1 - _o1, _c1 - _l1)
-            if form_310
-                text_ := 'Bullish MeReT'
-                found := true
-                num := 3
-                ploth := _h1
-                plotl := _l1
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert310 and text_ == '' and (filterbull and _o2 < _c2 and _c1 < _o1 and _c1 < _l2 and _l0 <= _l2 and _l1 < _l0 and _c0 > _h1 and _o1 - _c1 > math.max(_h1 - _o1, _c1 - _l1))
+            text_ := 'Bullish MeReT'
+            found := true
+            num := 3
+            ploth := _h1
+            plotl := _l1
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert311 and text_ == ''
-            form_311 = filterbear and _o2 > _c2 and _l1 < _l2 and _h2 >= math.max(_h0, _h1) and _c1 > _o1 and _o0 > _c0 and math.max(_h1, _h0) >= math.max(_c2, _o2) and _c0 < _l1
-            if form_311
-                text_ := 'Bearish Protected Engulf'
-                found := true
-                num := -3
-                ploth := _h2
-                plotl := _l1
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert311 and text_ == '' and (filterbear and _o2 > _c2 and _l1 < _l2 and _h2 >= math.max(_h0, _h1) and _c1 > _o1 and _o0 > _c0 and math.max(_h1, _h0) >= math.max(_c2, _o2) and _c0 < _l1)
+            text_ := 'Bearish Protected Engulf'
+            found := true
+            num := -3
+            ploth := _h2
+            plotl := _l1
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
-        if not found and alert312 and text_ == ''
-            form_312 = filterbull and _c2 > _o2 and _h1 > _h2 and _l2 <= math.min(_l0, _l1) and _c1 < _o1 and _o0 < _c0 and math.min(_l1, _l0) <= math.min(_c2, _o2) and _c0 > _h1
-            if form_312
-                text_ := 'Bullish Protected Engulf'
-                found := true
-                num := 3
-                ploth := _h1
-                plotl := _l2
-                plott := _t2
-                singleh := math.max(_h2, _h1, _h0)
-                singlel := math.min(_l2, _l1, _l0)
-                singleo := _o2
+        if not found and alert312 and text_ == '' and (filterbull and _c2 > _o2 and _h1 > _h2 and _l2 <= math.min(_l0, _l1) and _c1 < _o1 and _o0 < _c0 and math.min(_l1, _l0) <= math.min(_c2, _o2) and _c0 > _h1)
+            text_ := 'Bullish Protected Engulf'
+            found := true
+            num := 3
+            ploth := _h1
+            plotl := _l2
+            plott := _t2
+            singleh := s2h
+            singlel := s2l
+            singleo := _o2
 
         text1 := text_
 
