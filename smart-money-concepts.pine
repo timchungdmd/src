@@ -1830,25 +1830,30 @@ var labels = array.new_label()
 while array.size(labels) > 0
     label.delete(array.shift(labels))
 
-if array.size(high_pivots) > 1
-    if i_drawpivots
-        for pivot in high_pivots
-            array.push(labels, label.new(pivot.index, pivot.price, '', style = label.style_label_down, size = size.tiny, color = color.new(#99d31b, 70)))
-
+// Extracted the two structurally-parallel high/low pivot-channel blocks into one
+// helper. Every per-side difference is preserved via cmpIsHigh / ext_src /
+// min_sentinel — including the load-bearing old-method sentinel (1e7 for high vs
+// 1e5 for low), the direction of the old-method (lp > high vs lp < low), the count
+// comparison (>= vs <=), and the tie-break direction. The side-specific label push
+// and the distinct persistent var lines (high_trend/low_trend) stay in the callers
+// so their line histories remain independent.
+pivot_channel(array<PivotPoint> pivots, color col, bool cmpIsHigh, float ext_src, float min_sentinel) =>
+    result = line(na)
     tmp = array.new_line()
-    for i = 0 to array.size(high_pivots) - 1 by 1
-        for j = i to array.size(high_pivots) - 1 by 1
+    for i = 0 to array.size(pivots) - 1 by 1
+        for j = i to array.size(pivots) - 1 by 1
             if i != j
-                PivotPoint pp0 = array.get(high_pivots, i)
-                PivotPoint pp1 = array.get(high_pivots, j)
-                array.push(tmp, line.new(pp0.index, pp0.price, pp1.index, pp1.price, color = i_hcolor, width = 1, style = line.style_dashed))
+                PivotPoint pp0 = array.get(pivots, i)
+                PivotPoint pp1 = array.get(pivots, j)
+                array.push(tmp, line.new(pp0.index, pp0.price, pp1.index, pp1.price, color = col, width = 1, style = line.style_dashed))
 
     best_ind = int(na)
     if i_trend_old_method
-        min_val = 10000000.0
+        min_val = min_sentinel
         for i = 0 to array.size(tmp) - 1 by 1
             lp = line.get_price(array.get(tmp, i), bar_index)
-            if lp > high
+            cond = cmpIsHigh ? lp > high : lp < low
+            if cond
                 if min_val > math.abs(lp - close)
                     min_val := math.abs(lp - close)
                     best_ind := i
@@ -1858,8 +1863,9 @@ if array.size(high_pivots) > 1
             trend = array.get(tmp, i)
             cnt = 0
 
-            for pivot in high_pivots
-                if line.get_price(trend, pivot.index) >= pivot.price
+            for pivot in pivots
+                matchp = cmpIsHigh ? line.get_price(trend, pivot.index) >= pivot.price : line.get_price(trend, pivot.index) <= pivot.price
+                if matchp
                     cnt := cnt + 1
 
             if cnt > best_cnt
@@ -1867,66 +1873,36 @@ if array.size(high_pivots) > 1
                 best_ind := i
 
             if cnt == best_cnt
-                if line.get_price(array.get(tmp, best_ind), bar_index + 1) > line.get_price(trend, bar_index + 1) and line.get_price(trend, bar_index + 1) > i_hsource
+                tie = cmpIsHigh ? (line.get_price(array.get(tmp, best_ind), bar_index + 1) > line.get_price(trend, bar_index + 1) and line.get_price(trend, bar_index + 1) > ext_src) : (line.get_price(array.get(tmp, best_ind), bar_index + 1) < line.get_price(trend, bar_index + 1) and line.get_price(trend, bar_index + 1) < ext_src)
+                if tie
                     best_cnt := cnt
                     best_ind := i
 
     if not na(best_ind)
-        line.delete(high_trend)
-        high_trend := array.get(tmp, best_ind)
+        result := array.get(tmp, best_ind)
         array.remove(tmp, best_ind)
 
     while array.size(tmp) > 0
         line.delete(array.shift(tmp))
+    result
+
+if array.size(high_pivots) > 1
+    if i_drawpivots
+        for pivot in high_pivots
+            array.push(labels, label.new(pivot.index, pivot.price, '', style = label.style_label_down, size = size.tiny, color = color.new(#99d31b, 70)))
+    high_chosen = pivot_channel(high_pivots, i_hcolor, true, i_hsource, 10000000.0)
+    if not na(high_chosen)
+        line.delete(high_trend)
+        high_trend := high_chosen
 
 if array.size(low_pivots) > 1
     if i_drawpivots
         for pivot in low_pivots
             array.push(labels, label.new(pivot.index, pivot.price, '', style = label.style_label_up, size = size.tiny, color = color.new(#FA5032, 70)))
-
-    tmp = array.new_line()
-    for i = 0 to array.size(low_pivots) - 1 by 1
-        for j = i to array.size(low_pivots) - 1 by 1
-            if i != j
-                PivotPoint pp0 = array.get(low_pivots, i)
-                PivotPoint pp1 = array.get(low_pivots, j)
-                array.push(tmp, line.new(pp0.index, pp0.price, pp1.index, pp1.price, color = i_lcolor, width = 1, style = line.style_dashed))
-
-    best_ind = int(na)
-    if i_trend_old_method
-        min_val = 100000.0
-        for i = 0 to array.size(tmp) - 1 by 1
-            lp = line.get_price(array.get(tmp, i), bar_index)
-            if lp < low
-                if min_val > math.abs(lp - close)
-                    min_val := math.abs(lp - close)
-                    best_ind := i
-    else
-        best_cnt = 0
-        for i = 0 to array.size(tmp) - 1 by 1
-            trend = array.get(tmp, i)
-            cnt = 0
-
-            for pivot in low_pivots
-                if line.get_price(trend, pivot.index) <= pivot.price
-                    cnt := cnt + 1
-
-            if cnt > best_cnt
-                best_cnt := cnt
-                best_ind := i
-
-            if cnt == best_cnt
-                if line.get_price(array.get(tmp, best_ind), bar_index + 1) < line.get_price(trend, bar_index + 1) and line.get_price(trend, bar_index + 1) < i_lsource
-                    best_cnt := cnt
-                    best_ind := i
-
-    if not na(best_ind)
+    low_chosen = pivot_channel(low_pivots, i_lcolor, false, i_lsource, 100000.0)
+    if not na(low_chosen)
         line.delete(low_trend)
-        low_trend := array.get(tmp, best_ind)
-        array.remove(tmp, best_ind)
-
-    while array.size(tmp) > 0
-        line.delete(array.shift(tmp))
+        low_trend := low_chosen
 
 if not na(low_trend) and not na(high_trend)
     for l in labels
@@ -2626,79 +2602,69 @@ shoot2 = 2 * (singleo2[1] - close[1]) <= singleh2[1] - singleo2[1] and close[1] 
 if form0[1] and txt0[1] != txt0[2]
     alert(f_text(tf) + ' ' + txt0[1], alert.freq_once_per_bar)
     box_clr = nm0[1] > 0 ? bull_clr : bear_clr
-    if nm0[1] > 0 and show_pt_box
+    // Sign-parameterized the mutually-exclusive nm0>0 / nm0<0 branches within
+    // sequence 0. sgn=+1 (bull) / -1 (bear). Verified coordinate-equivalent to the
+    // originals: box0 is byte-identical across signs; dq collapses to (|nm0|-1)*...
+    // for both signs; the vertical offset flips as -sgn*dq; label y/textcolor and
+    // the df anchor (lastplotl vs lastploth) and hammer/shoot branch on sgn.
+    if (nm0[1] > 0 or nm0[1] < 0) and show_pt_box
+        sgn0 = nm0[1] > 0 ? 1 : -1
         box0 := box.new(left = plt0t[1], top = plt0h[1], right = time[1], bottom = plt0l[1], xloc = xloc.bar_time, bgcolor = color.new(box_clr, cont_clr), border_color = color.new(box_clr, 30), text = '', text_size = sz, text_valign = text.align_bottom, text_halign = text.align_right, text_color = color.gray)
         if show_last_box
             box.delete(box0[1])
         if show_label
-            lbl0 := label.new(math.round((plt0t[1] + time[1]) / 2), plt0l[1] - (nm0[1] - 2) * pattatr, text = stext0[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr, size = sz)
+            lbl0 := label.new(math.round((plt0t[1] + time[1]) / 2), sgn0 > 0 ? plt0l[1] - (nm0[1] - 2) * pattatr : plt0h[1] + (math.abs(nm0[1]) - 2) * pattatr, text = stext0[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = sgn0 > 0 ? bull_clr : bear_clr, size = sz)
             if show_last_label
                 label.delete(lbl0[1])
         if show_single
-            df = bar_index - lastplotl <= 4 ? 3 * dt : 0
-            dq = (nm0[1] - 1) * pattatr + singleh0[1] - singlel0[1]
-            box.new(left = df + math.round((plt0t[1] + time[1]) / 2) - dt, top = singleo0[1] - dq, right = df + math.round((plt0t[1] + time[1]) / 2) + dt, bottom = close[1] - dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = bull_clr, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = size.tiny, border_style = line.style_solid)
-            line.new(x1 = df + math.round((plt0t[1] + time[1]) / 2), y1 = singleo0[1] - dq, x2 = df + math.round((plt0t[1] + time[1]) / 2), y2 = singleh0[1] - dq, xloc = xloc.bar_time, color = bull_clr, style = line.style_solid)
-            line.new(x1 = df + math.round((plt0t[1] + time[1]) / 2), y1 = close[1] - dq, x2 = df + math.round((plt0t[1] + time[1]) / 2), y2 = singlel0[1] - dq, xloc = xloc.bar_time, color = bull_clr, style = line.style_solid)
-            if hammer0
-                label.new(x = df + math.round((plt0t[1] + time[1]) / 2), y = singlel0[1] - dq - pattatr, text = 'Hammer', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr, size = sz)
-            lastplotl := bar_index
-    if nm0[1] < 0 and show_pt_box
-        box0 := box.new(left = plt0t[1], top = plt0h[1], right = time[1], bottom = plt0l[1], xloc = xloc.bar_time, bgcolor = color.new(box_clr, cont_clr), border_color = color.new(box_clr, 30), text = '', text_size = sz, text_valign = text.align_bottom, text_halign = text.align_right, text_color = color.gray)
-        if show_last_box
-            box.delete(box0[1])
-        if show_label
-            lbl0 := label.new(math.round((plt0t[1] + time[1]) / 2), plt0h[1] + (math.abs(nm0[1]) - 2) * pattatr, text = stext0[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr, size = sz)
-            if show_last_label
-                label.delete(lbl0[1])
-        if show_single
-            df = bar_index - lastploth <= 4 ? 3 * dt : 0
-            dq = (-nm0[1] - 1) * pattatr + singleh0[1] - singlel0[1]
-            box.new(left = df + math.round((plt0t[1] + time[1]) / 2) - dt, top = singleo0[1] + dq, right = df + math.round((plt0t[1] + time[1]) / 2) + dt, bottom = close[1] + dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = bear_clr, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = size.tiny, border_style = line.style_solid)
-            line.new(x1 = df + math.round((plt0t[1] + time[1]) / 2), y1 = singleo0[1] + dq, x2 = df + math.round((plt0t[1] + time[1]) / 2), y2 = singleh0[1] + dq, xloc = xloc.bar_time, color = bear_clr, style = line.style_solid)
-            line.new(x1 = df + math.round((plt0t[1] + time[1]) / 2), y1 = close[1] + dq, x2 = df + math.round((plt0t[1] + time[1]) / 2), y2 = singlel0[1] + dq, xloc = xloc.bar_time, color = bear_clr, style = line.style_solid)
-            if shoot0
-                label.new(x = df + math.round((plt0t[1] + time[1]) / 2), y = singleh0[1] + dq + pattatr, text = 'Shooting Star', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr, size = sz)
-            lastploth := bar_index
+            df = bar_index - (sgn0 > 0 ? lastplotl : lastploth) <= 4 ? 3 * dt : 0
+            dq = (math.abs(nm0[1]) - 1) * pattatr + singleh0[1] - singlel0[1]
+            cx = df + math.round((plt0t[1] + time[1]) / 2)
+            sclr0 = sgn0 > 0 ? bull_clr : bear_clr
+            box.new(left = cx - dt, top = singleo0[1] - sgn0 * dq, right = cx + dt, bottom = close[1] - sgn0 * dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = sclr0, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = size.tiny, border_style = line.style_solid)
+            line.new(x1 = cx, y1 = singleo0[1] - sgn0 * dq, x2 = cx, y2 = singleh0[1] - sgn0 * dq, xloc = xloc.bar_time, color = sclr0, style = line.style_solid)
+            line.new(x1 = cx, y1 = close[1] - sgn0 * dq, x2 = cx, y2 = singlel0[1] - sgn0 * dq, xloc = xloc.bar_time, color = sclr0, style = line.style_solid)
+            if sgn0 > 0 and hammer0
+                label.new(x = cx, y = singlel0[1] - dq - pattatr, text = 'Hammer', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr, size = sz)
+            if sgn0 < 0 and shoot0
+                label.new(x = cx, y = singleh0[1] + dq + pattatr, text = 'Shooting Star', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr, size = sz)
+            if sgn0 > 0
+                lastplotl := bar_index
+            else
+                lastploth := bar_index
 
 if timeframe.change(stf)
     if form2[1] and txt2[1] != txt2
         alert(f_text(stf) + ' ' + txt2[1], alert.freq_once_per_bar)
         box_clr = nm2[1] > 0 ? bull_clr2 : bear_clr2
-        if nm2[1] > 0 and show_pt_box2
-            box2 := box.new(left = plt2t[1], top = plt2h[1], right = time[1], bottom = plt2l[1], xloc = xloc.bar_time, bgcolor = color.new(box_clr, 100), border_color = color.new(box_clr, cont_clr2), text = '2.', text_size = sz, text_valign = text.align_bottom, text_halign = text.align_right, text_color = color.gray)
+        // Sign-parameterized the nm2>0 / nm2<0 branches within sequence 2 only
+        // (NOT merged with sequence 0 — its dq is a constant 2*pattatr, its box
+        // valign flips by sign, it uses bull_clr2/bear_clr2/cont_clr2 and text '2.').
+        if (nm2[1] > 0 or nm2[1] < 0) and show_pt_box2
+            sgn2 = nm2[1] > 0 ? 1 : -1
+            box2 := box.new(left = plt2t[1], top = plt2h[1], right = time[1], bottom = plt2l[1], xloc = xloc.bar_time, bgcolor = color.new(box_clr, 100), border_color = color.new(box_clr, cont_clr2), text = '2.', text_size = sz, text_valign = sgn2 > 0 ? text.align_bottom : text.align_top, text_halign = text.align_right, text_color = color.gray)
             if show_last_box
                 box.delete(box2[1])
             if show_label2
-                lbl2 := label.new(math.round((plt2t[1] + time[1]) / 2), plt2l[1] - pattatr, text = stext2[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr2, size = sz)
+                lbl2 := label.new(math.round((plt2t[1] + time[1]) / 2), sgn2 > 0 ? plt2l[1] - pattatr : plt2h[1] + pattatr, text = stext2[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = sgn2 > 0 ? bull_clr2 : bear_clr2, size = sz)
                 if show_last_label
                     label.delete(lbl2[1])
             if show_single
-                df = bar_index - lastplotl <= 4 ? 3 * dt : 0
+                df = bar_index - (sgn2 > 0 ? lastplotl : lastploth) <= 4 ? 3 * dt : 0
                 dq = 2 * pattatr + singleh2[1] - singlel2[1]
-                box.new(left = df + math.round((plt2t[1] + time[1]) / 2) - dt, top = singleo2[1] - dq, right = df + math.round((plt2t[1] + time[1]) / 2) + dt, bottom = close[1] - dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = bull_clr2, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = sz, border_style = line.style_solid)
-                line.new(x1 = df + math.round((plt2t[1] + time[1]) / 2), y1 = singleo2[1] - dq, x2 = df + math.round((plt2t[1] + time[1]) / 2), y2 = singleh2[1] - dq, xloc = xloc.bar_time, color = bull_clr2, style = line.style_solid)
-                line.new(x1 = df + math.round((plt2t[1] + time[1]) / 2), y1 = close[1] - dq, x2 = df + math.round((plt2t[1] + time[1]) / 2), y2 = singlel2[1] - dq, xloc = xloc.bar_time, color = bull_clr2, style = line.style_solid)
-                if hammer2
-                    label.new(x = df + math.round((plt2t[1] + time[1]) / 2), y = singlel2[1] - dq - pattatr, text = 'Hammer', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr2, size = sz)
-                lastplotl := bar_index
-        if nm2[1] < 0 and show_pt_box2
-            box2 := box.new(left = plt2t[1], top = plt2h[1], right = time[1], bottom = plt2l[1], xloc = xloc.bar_time, bgcolor = color.new(box_clr, 100), border_color = color.new(box_clr, cont_clr2), text = '2.', text_size = sz, text_valign = text.align_top, text_halign = text.align_right, text_color = color.gray)
-            if show_last_box
-                box.delete(box2[1])
-            if show_label2
-                lbl2 := label.new(math.round((plt2t[1] + time[1]) / 2), plt2h[1] + pattatr, text = stext2[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr2, size = sz)
-                if show_last_label
-                    label.delete(lbl2[1])
-            if show_single
-                df = bar_index - lastploth <= 4 ? 3 * dt : 0
-                dq = 2 * pattatr + singleh2[1] - singlel2[1]
-                box.new(left = df + math.round((plt2t[1] + time[1]) / 2) - dt, top = singleo2[1] + dq, right = df + math.round((plt2t[1] + time[1]) / 2) + dt, bottom = close[1] + dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = bear_clr2, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = sz, border_style = line.style_solid)
-                line.new(x1 = df + math.round((plt2t[1] + time[1]) / 2), y1 = singleo2[1] + dq, x2 = df + math.round((plt2t[1] + time[1]) / 2), y2 = singleh2[1] + dq, xloc = xloc.bar_time, color = bear_clr2, style = line.style_solid)
-                line.new(x1 = df + math.round((plt2t[1] + time[1]) / 2), y1 = close[1] + dq, x2 = df + math.round((plt2t[1] + time[1]) / 2), y2 = singlel2[1] + dq, xloc = xloc.bar_time, color = bear_clr2, style = line.style_solid)
-                if shoot2
-                    label.new(x = df + math.round((plt2t[1] + time[1]) / 2), y = singleh2[1] + dq + pattatr, text = 'Shooting Star', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr2, size = sz)
-                lastploth := bar_index
+                cx = df + math.round((plt2t[1] + time[1]) / 2)
+                sclr2 = sgn2 > 0 ? bull_clr2 : bear_clr2
+                box.new(left = cx - dt, top = singleo2[1] - sgn2 * dq, right = cx + dt, bottom = close[1] - sgn2 * dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = sclr2, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = sz, border_style = line.style_solid)
+                line.new(x1 = cx, y1 = singleo2[1] - sgn2 * dq, x2 = cx, y2 = singleh2[1] - sgn2 * dq, xloc = xloc.bar_time, color = sclr2, style = line.style_solid)
+                line.new(x1 = cx, y1 = close[1] - sgn2 * dq, x2 = cx, y2 = singlel2[1] - sgn2 * dq, xloc = xloc.bar_time, color = sclr2, style = line.style_solid)
+                if sgn2 > 0 and hammer2
+                    label.new(x = cx, y = singlel2[1] - dq - pattatr, text = 'Hammer', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr2, size = sz)
+                if sgn2 < 0 and shoot2
+                    label.new(x = cx, y = singleh2[1] + dq + pattatr, text = 'Shooting Star', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr2, size = sz)
+                if sgn2 > 0
+                    lastplotl := bar_index
+                else
+                    lastploth := bar_index
 
 if show_table
     table.cell(tablo, 0, 0, text = 'Candlestick formation', text_color = color.white, bgcolor = color.red, text_size = sz)
