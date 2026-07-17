@@ -513,59 +513,52 @@ fvg(direction) =>
 
     fvgDrawings
 
+// Mirrored fvgDn/fvgUp maintenance de-duplicated into helpers. fvgDn/fvgUp remain
+// two independent fvg() call results (their var state is not coalesced); the helpers
+// branch on isDown internally because Pine has no first-class built-in method refs.
+// All six per-side differences (price source, primary bound, comparison, contract
+// bound, contract comparison, setter) are preserved.
+pruneFvg(array<box> arr, bool isDown, bool contract) =>
+    if arr.size() > 0
+        for i = arr.size() - 1 to 0 by 1
+            b = arr.get(i)
+            price = isDown ? high : low
+            primaryBound = isDown ? b.get_top() : b.get_bottom()
+            violated = isDown ? (price >= primaryBound) : (price <= primaryBound)
+            if violated
+                b.delete()
+                arr.remove(i)
+            else if contract
+                if isDown
+                    if high > b.get_bottom()
+                        b.set_bottom(high)
+                else
+                    if low < b.get_top()
+                        b.set_top(low)
+
+highlightClosest(array<box> arr, bool isDown) =>
+    if arr.size() > 0
+        md = matrix.new<float>(1, 2, 20e20)
+        for i = arr.size() - 1 to 0 by 1
+            bound = isDown ? arr.get(i).get_bottom() : arr.get(i).get_top()
+            md.set(0, 1, math.min(md.get(0, 1), math.abs(close - bound)))
+            if math.abs(close - bound) == md.get(0, 1)
+                md.set(0, 0, i)
+            arr.get(i).set_right(arr.get(i).get_left())
+        arr.get(int(md.get(0, 0))).set_bgcolor(color.new(fvgcol, fvgtra))
+        arr.get(int(md.get(0, 0))).set_border_color(color.new(fvgcol, fvgtra))
+        arr.get(int(md.get(0, 0))).set_right(last_bar_time)
+
 if showFVG
     fvgDn = fvg(-3)
     fvgUp = fvg(3)
 
-    if fvgDn.size() > 0
-        for i = fvgDn.size() - 1 to 0 by 1
-            getfvg = fvgDn.get(i)
-            if high >= getfvg.get_top()
-                getfvg.delete()
-                fvgDn.remove(i)
-            else if contract
-                if high > getfvg.get_bottom()
-                    getfvg.set_bottom(high)
-
-    if fvgUp.size() > 0
-        for i = fvgUp.size() - 1 to 0 by 1
-            getfvg = fvgUp.get(i)
-            if low <= getfvg.get_bottom()
-                getfvg.delete()
-                fvgUp.remove(i)
-            else if contract
-                if low < getfvg.get_top()
-                    getfvg.set_top(low)
+    pruneFvg(fvgDn, true, contract)
+    pruneFvg(fvgUp, false, contract)
 
     if closeOnly and barstate.islast
-        minDist = matrix.new<float>(1, 2, 20e20)
-
-        if fvgDn.size() > 0
-            for i = fvgDn.size() - 1 to 0 by 1
-                getBottom = fvgDn.get(i).get_bottom()
-                minDist.set(0, 1, math.min(minDist.get(0, 1), math.abs(close - getBottom)))
-                if math.abs(close - getBottom) == minDist.get(0, 1)
-                    minDist.set(0, 0, i)
-                fvgDn.get(i).set_right(fvgDn.get(i).get_left())
-
-            fvgDn.get(int(minDist.get(0, 0))).set_bgcolor(color.new(fvgcol, fvgtra))
-            fvgDn.get(int(minDist.get(0, 0))).set_border_color(color.new(fvgcol, fvgtra))
-            fvgDn.get(int(minDist.get(0, 0))).set_right(last_bar_time)
-
-        minDist.set(0, 0, 0)
-        minDist.set(0, 1, 20e20)
-
-        if fvgUp.size() > 0
-            for i = fvgUp.size() - 1 to 0 by 1
-                getTop = fvgUp.get(i).get_top()
-                minDist.set(0, 1, math.min(minDist.get(0, 1), math.abs(close - getTop)))
-                if math.abs(close - getTop) == minDist.get(0, 1)
-                    minDist.set(0, 0, i)
-                fvgUp.get(i).set_right(fvgUp.get(i).get_left())
-
-            fvgUp.get(int(minDist.get(0, 0))).set_bgcolor(color.new(fvgcol, fvgtra))
-            fvgUp.get(int(minDist.get(0, 0))).set_border_color(color.new(fvgcol, fvgtra))
-            fvgUp.get(int(minDist.get(0, 0))).set_right(last_bar_time)
+        highlightClosest(fvgDn, true)
+        highlightClosest(fvgUp, false)
 
 calculateTimeDifference(timestamp1, timestamp2) =>
     timeDifference = timestamp2 - timestamp1
@@ -1731,79 +1724,53 @@ plt1M = plot(vwapM, 'MTD VWAP Line', col_M, math.max(1, wid_M))
 plt3M = plot(vwapQ, 'QTD VWAP Line', col_Q, math.max(1, wid_Q))
 plt_e = plot(vwape, 'ERN VWAP Line', col_e, math.max(1, wid_e))
 
-svwap(show1, source1, signal1, length1, barsL1, barsR1, color1, width1, show2, source2, signal2, length2, barsL2, barsR2, color2, width2) =>
+// One signal leg extracted from svwap(). Called at two sites below so each ta.*
+// and line.new keeps its own independent series history. The pivot series is now
+// computed once (piv/hasPiv) and reused in both valuewhen calls.
+svwap_leg(show, source, signal, length, barsL, barsR, col, wid) =>
     idxCB = bar_index
-
-    valS1 = float(na)
-    idxS1 = int(na)
-    sS1V1 = float(na)
-    sVol1 = float(na)
-    valP1 = float(na)
-    valC1 = float(na)
-
-    valS2 = float(na)
-    idxS2 = int(na)
-    sS2V2 = float(na)
-    sVol2 = float(na)
-    valP2 = float(na)
-    valC2 = float(na)
+    valS = float(na)
+    idxS = int(na)
+    sSV = float(na)
+    sVol = float(na)
+    valP = float(na)
+    valC = float(na)
     lines = line(na)
+    if show
+        piv = signal == 'Pivot High' ? ta.pivothigh(source, barsL, barsR) : signal == 'Pivot Low' ? ta.pivotlow(source, barsL, barsR) : na
+        hasPiv = not na(piv)
+        valS := signal == 'Highest' ? ta.highest(source, length) : signal == 'Lowest' ? ta.lowest(source, length) : signal == 'Highest Volume' ? ta.highest(volume, length) : signal == 'Lowest Volume' ? ta.lowest(volume, length) : signal == 'Pivot High' ? ta.valuewhen(hasPiv, source[barsR], 0) : signal == 'Pivot Low' ? ta.valuewhen(hasPiv, source[barsR], 0) : float(na)
+        if signal == 'Highest' or signal == 'Lowest'
+            for i = 0 to length - 1 by 1
+                if source[i] == valS
+                    idxS := bar_index[i]
+                    break
+        if signal == 'Highest Volume' or signal == 'Lowest Volume'
+            for i = 0 to length - 1 by 1
+                if volume[i] == valS
+                    idxS := bar_index[i]
+                    break
+        if signal == 'Pivot High' or signal == 'Pivot Low'
+            idxS := signal == 'Pivot High' ? ta.valuewhen(hasPiv, bar_index[barsR], 0) : signal == 'Pivot Low' ? ta.valuewhen(hasPiv, bar_index[barsR], 0) : int(na)
+        nBars = 1 + idxCB - idxS
+        for i = nBars - 1 to 0 by 1
+            sSV := nz(sSV) + nz(source[i] * volume[i])
+            sVol := nz(sVol) + nz(volume[i])
+            valP := nz(valC, na)
+            valC := sSV / sVol
+            lines := line.new(idxCB - i - 1, valP, idxCB - i, valC, xloc.bar_index, extend.none, col, width = wid)
+    valC
 
-    if not show1 and not show2
-        valC1 := float(na)
-        valC2 := float(na)
-    else
+svwap(show1, source1, signal1, length1, barsL1, barsR1, color1, width1, show2, source2, signal2, length2, barsL2, barsR2, color2, width2) =>
+    valC1 = float(na)
+    valC2 = float(na)
+    if show1 or show2
         a_allLines = line.all
         if array.size(a_allLines) > 0
             for i = 0 to array.size(a_allLines) - 1 by 1
                 line.delete(array.get(a_allLines, i))
-
-        if show1
-            valS1 := signal1 == 'Highest' ? ta.highest(source1, length1) : signal1 == 'Lowest' ? ta.lowest(source1, length1) : signal1 == 'Highest Volume' ? ta.highest(volume, length1) : signal1 == 'Lowest Volume' ? ta.lowest(volume, length1) : signal1 == 'Pivot High' ? ta.valuewhen(not na(ta.pivothigh(source1, barsL1, barsR1)), source1[barsR1], 0) : signal1 == 'Pivot Low' ? ta.valuewhen(not na(ta.pivotlow(source1, barsL1, barsR1)), source1[barsR1], 0) : float(na)
-            if signal1 == 'Highest' or signal1 == 'Lowest'
-                for i = 0 to length1 - 1 by 1
-                    if source1[i] == valS1
-                        idxS1 := bar_index[i]
-                        break
-            if signal1 == 'Highest Volume' or signal1 == 'Lowest Volume'
-                for i = 0 to length1 - 1 by 1
-                    if volume[i] == valS1
-                        idxS1 := bar_index[i]
-                        break
-            if signal1 == 'Pivot High' or signal1 == 'Pivot Low'
-                idxS1 := signal1 == 'Pivot High' ? ta.valuewhen(not na(ta.pivothigh(source1, barsL1, barsR1)), bar_index[barsR1], 0) : signal1 == 'Pivot Low' ? ta.valuewhen(not na(ta.pivotlow(source1, barsL1, barsR1)), bar_index[barsR1], 0) : int(na)
-
-            nBars = 1 + idxCB - idxS1
-            for i = nBars - 1 to 0 by 1
-                sS1V1 := nz(sS1V1) + nz(source1[i] * volume[i])
-                sVol1 := nz(sVol1) + nz(volume[i])
-                valP1 := nz(valC1, na)
-                valC1 := sS1V1 / sVol1
-                lines := line.new(idxCB - i - 1, valP1, idxCB - i, valC1, xloc.bar_index, extend.none, color1, width = width1)
-
-        if show2
-            valS2 := signal2 == 'Highest' ? ta.highest(source2, length2) : signal2 == 'Lowest' ? ta.lowest(source2, length2) : signal2 == 'Highest Volume' ? ta.highest(volume, length2) : signal2 == 'Lowest Volume' ? ta.lowest(volume, length2) : signal2 == 'Pivot High' ? ta.valuewhen(not na(ta.pivothigh(source2, barsL2, barsR2)), source2[barsR2], 0) : signal2 == 'Pivot Low' ? ta.valuewhen(not na(ta.pivotlow(source2, barsL2, barsR2)), source2[barsR2], 0) : float(na)
-            if signal2 == 'Highest' or signal2 == 'Lowest'
-                for i = 0 to length2 - 1 by 1
-                    if source2[i] == valS2
-                        idxS2 := bar_index[i]
-                        break
-            if signal2 == 'Highest Volume' or signal2 == 'Lowest Volume'
-                for i = 0 to length2 - 1 by 1
-                    if volume[i] == valS2
-                        idxS2 := bar_index[i]
-                        break
-            if signal2 == 'Pivot High' or signal2 == 'Pivot Low'
-                idxS2 := signal2 == 'Pivot High' ? ta.valuewhen(not na(ta.pivothigh(source2, barsL2, barsR2)), bar_index[barsR2], 0) : signal2 == 'Pivot Low' ? ta.valuewhen(not na(ta.pivotlow(source2, barsL2, barsR2)), bar_index[barsR2], 0) : int(na)
-
-            nBars = 1 + idxCB - idxS2
-            for i = nBars - 1 to 0 by 1
-                sS2V2 := nz(sS2V2) + nz(source2[i] * volume[i])
-                sVol2 := nz(sVol2) + nz(volume[i])
-                valP2 := nz(valC2, na)
-                valC2 := sS2V2 / sVol2
-                lines := line.new(idxCB - i - 1, valP2, idxCB - i, valC2, xloc.bar_index, extend.none, color2, width = width2)
-
+        valC1 := svwap_leg(show1, source1, signal1, length1, barsL1, barsR1, color1, width1)
+        valC2 := svwap_leg(show2, source2, signal2, length2, barsL2, barsR2, color2, width2)
     [valC1, valC2]
 
 [vwap1, vwap2] = svwap(shoAH, srcAH, typAH, lenAH, plbAH, prbAH, colAH, widAH, shoAL, srcAL, typAL, lenAL, plbAL, prbAL, colAL, widAL)
