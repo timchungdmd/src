@@ -1992,38 +1992,17 @@ while array.size(fibs) > 0
 if not na(high_trend) and not na(low_trend) and barstate.islast and i_drawfibs
     left = line.get_x1(low_trend)
     right = bar_index + i_trend_extlen
-    left_val = interp(line.get_price(low_trend, left), line.get_price(high_trend, left), -0.618)
-    right_val = interp(line.get_price(low_trend, right), line.get_price(high_trend, right), -0.618)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-    left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 0.236)
-    right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 0.236)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-    left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 0.382)
-    right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 0.382)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-    left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 0.5)
-    right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 0.5)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-    left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 0.618)
-    right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 0.618)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-    left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 0.75)
-    right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 0.75)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-    left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 1.618)
-    right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 1.618)
-    array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-
-    if i_drawfibs_extended
-        left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 2.618)
-        right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 2.618)
-        array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-        left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 3.618)
-        right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 3.618)
-        array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
-        left_val := interp(line.get_price(low_trend, left), line.get_price(high_trend, left), 4.236)
-        right_val := interp(line.get_price(low_trend, right), line.get_price(high_trend, right), 4.236)
-        array.push(fibs, line.new(left, left_val, right, right_val, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(right_val, line.get_price(low_trend, right), line.get_price(high_trend, right), i_lcolor, i_hcolor)))
+    // Hoisted the four per-bar-constant line.get_price reads out of the 7-10 copy-pasted
+    // blocks and looped over the ratio list. Push order and values are identical.
+    lp_ll = line.get_price(low_trend, left)
+    lp_hl = line.get_price(high_trend, left)
+    lp_lr = line.get_price(low_trend, right)
+    lp_hr = line.get_price(high_trend, right)
+    ratios = i_drawfibs_extended ? array.from(-0.618, 0.236, 0.382, 0.5, 0.618, 0.75, 1.618, 2.618, 3.618, 4.236) : array.from(-0.618, 0.236, 0.382, 0.5, 0.618, 0.75, 1.618)
+    for s in ratios
+        lv = interp(lp_ll, lp_hl, s)
+        rv = interp(lp_lr, lp_hr, s)
+        array.push(fibs, line.new(left, lv, right, rv, style = i_fibline_styles, width = i_fibline_widths, color = color.from_gradient(rv, lp_lr, lp_hr, i_lcolor, i_hcolor)))
 
 //////Moving Averages/////////////
 outC = ta.sma(close, 50)
@@ -3126,44 +3105,35 @@ down_cluster = 0
 volatility = ta.atr(14)
 anti_cluster_mult = 1
 
-if aR.size() > 0
-    for i = 0 to aR.size() - 1 by 1
-        price = aR.get(i).src
-        if up > price - volatility * anti_cluster_mult and up < price + volatility * anti_cluster_mult
-            up_cluster := 1
-            break
-        if middle > price - volatility * anti_cluster_mult and middle < price + volatility * anti_cluster_mult
-            middle_cluster := 1
-            break
-        if down > price - volatility * anti_cluster_mult and down < price + volatility * anti_cluster_mult
-            down_cluster := 1
-            break
+// Extracted the three byte-identical aR/aM/aS cluster-check blocks into one helper.
+// The `arr.size() > 0` guard is kept INSIDE the function: Pine auto-detects loop
+// direction, so `for i = 0 to arr.size()-1` on an empty array would count down and
+// read arr.get(0) out of bounds. Arrays pass by reference (read-only here); flags
+// only accumulate to 1, so combining with math.max reproduces the original OR exactly.
+check_cluster(array<store> arr, float up, float middle, float down, float vol, float mult) =>
+    int uc = 0
+    int mc = 0
+    int dc = 0
+    if arr.size() > 0
+        for i = 0 to arr.size() - 1 by 1
+            price = arr.get(i).src
+            if up > price - vol * mult and up < price + vol * mult
+                uc := 1
+                break
+            if middle > price - vol * mult and middle < price + vol * mult
+                mc := 1
+                break
+            if down > price - vol * mult and down < price + vol * mult
+                dc := 1
+                break
+    [uc, mc, dc]
 
-if aM.size() > 0
-    for i = 0 to aM.size() - 1 by 1
-        price = aM.get(i).src
-        if up > price - volatility * anti_cluster_mult and up < price + volatility * anti_cluster_mult
-            up_cluster := 1
-            break
-        if middle > price - volatility * anti_cluster_mult and middle < price + volatility * anti_cluster_mult
-            middle_cluster := 1
-            break
-        if down > price - volatility * anti_cluster_mult and down < price + volatility * anti_cluster_mult
-            down_cluster := 1
-            break
-
-if aS.size() > 0
-    for i = 0 to aS.size() - 1 by 1
-        price = aS.get(i).src
-        if up > price - volatility * anti_cluster_mult and up < price + volatility * anti_cluster_mult
-            up_cluster := 1
-            break
-        if middle > price - volatility * anti_cluster_mult and middle < price + volatility * anti_cluster_mult
-            middle_cluster := 1
-            break
-        if down > price - volatility * anti_cluster_mult and down < price + volatility * anti_cluster_mult
-            down_cluster := 1
-            break
+[uc1, mc1, dc1] = check_cluster(aR, up, middle, down, volatility, anti_cluster_mult)
+[uc2, mc2, dc2] = check_cluster(aM, up, middle, down, volatility, anti_cluster_mult)
+[uc3, mc3, dc3] = check_cluster(aS, up, middle, down, volatility, anti_cluster_mult)
+up_cluster     := math.max(uc1, uc2, uc3)
+middle_cluster := math.max(mc1, mc2, mc3)
+down_cluster   := math.max(dc1, dc2, dc3)
 
 if up == up[srConfirmLen] and up_cluster != 1 and shw1
     aR.push(store.new(line.new(bar_index, up, bar_index + 1, up, color = chart.fg_color, extend = extend.right, width = 3), up))
@@ -3174,68 +3144,34 @@ if middle == middle[srConfirmLen] and middle_cluster != 1 and shw1
 if down == down[srConfirmLen] and down_cluster != 1 and shw1
     aS.push(store.new(line.new(bar_index, down, bar_index + 1, down, color = chart.fg_color, extend = extend.right, width = 3), down))
 
-if aR.size() > 0
-    qt = aR.size()
-    for ln = qt - 1 to 0 by 1
-        if ln < aR.size()
-            cL = aR.get(ln)
-            yL = cL.lvl.get_x1()
-            vert = cL.lvl.get_y1()
+// Extracted the three byte-identical aR/aM/aS trailing-level maintenance blocks
+// into one helper. Arrays pass by reference so shift/delete/set_* mutate the
+// caller's array; the three var arrays keep independent persistent state.
+maintain_levels(array<store> arr, int clearN, bool colOn, color colUp, color colDn) =>
+    if arr.size() > 0
+        qt = arr.size()
+        for ln = qt - 1 to 0 by 1
+            if ln < arr.size()
+                cL = arr.get(ln)
+                yL = cL.lvl.get_x1()
+                vert = cL.lvl.get_y1()
 
-            if bar_index - yL > clear
-                aR.shift().lvl.delete()
-            else
-                cL.lvl.set_x2(bar_index + 1)
+                if bar_index - yL > clearN
+                    arr.shift().lvl.delete()
+                else
+                    cL.lvl.set_x2(bar_index + 1)
 
-            if close > vert and collvls
-                cL.lvl.set_color(green)
-            else if collvls
-                cL.lvl.set_color(red)
+                if close > vert and colOn
+                    cL.lvl.set_color(colUp)
+                else if colOn
+                    cL.lvl.set_color(colDn)
 
-    while aR.size() > 500
-        aR.shift().lvl.delete()
+        while arr.size() > 500
+            arr.shift().lvl.delete()
 
-if aM.size() > 0
-    qt = aM.size()
-    for ln = qt - 1 to 0 by 1
-        if ln < aM.size()
-            cL = aM.get(ln)
-            yL = cL.lvl.get_x1()
-            vert = cL.lvl.get_y1()
-
-            if bar_index - yL > clear
-                aM.shift().lvl.delete()
-            else
-                cL.lvl.set_x2(bar_index + 1)
-
-            if close > vert and collvls
-                cL.lvl.set_color(green)
-            else if collvls
-                cL.lvl.set_color(red)
-
-    while aM.size() > 500
-        aM.shift().lvl.delete()
-
-if aS.size() > 0
-    qt = aS.size()
-    for ln = qt - 1 to 0 by 1
-        if ln < aS.size()
-            cL = aS.get(ln)
-            yL = cL.lvl.get_x1()
-            vert = cL.lvl.get_y1()
-
-            if bar_index - yL > clear
-                aS.shift().lvl.delete()
-            else
-                cL.lvl.set_x2(bar_index + 1)
-
-            if close > vert and collvls
-                cL.lvl.set_color(green)
-            else if collvls
-                cL.lvl.set_color(red)
-
-    while aS.size() > 500
-        aS.shift().lvl.delete()
+maintain_levels(aR, clear, collvls, green, red)
+maintain_levels(aM, clear, collvls, green, red)
+maintain_levels(aS, clear, collvls, green, red)
 
 u = plot(up, 'Upper', color.new(green, 50), display = shw ? display.all : display.none)
 m = plot(middle, 'Middle', color.new(color.blue, 50), display = shw ? display.all : display.none)
