@@ -4,19 +4,12 @@
 //@version=6
 indicator('Smart Money Concepts [LUX]', 'Smart Money Concepts [LuxAlgo]', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 500)
 
-//import Libraries
-import TFlab/OrderBlockRefiner_TradingFinder/2 as Refiner
-import TFlab/OrderBlockDrawing_TradingFinder/1 as Drawing
-import TFlab/FVGDetectorLibrary/1 as FVG
-import TFlab/LiquidityFinderLibrary/1 as Liq
-import TFlab/AlertSenderLibrary_TradingFinder/1 as Alert
-import TradingView/ta/7
-
-import robbatt/lib_plot_objects/56 as D
-import robbatt/lib_profile/44 as PF
-import robbatt/lib_no_delay/18 as ND
-import robbatt/lib_math/2 as M
-import robbatt/lib_smc/30 as SMC
+// NOTE: All library imports were removed — none of the imported namespaces
+// (Refiner/Drawing/FVG/Liq/Alert/D/PF/ND/M/SMC and the unaliased ta) is referenced
+// anywhere in the script. Every ta.* call used is a core Pine v6 built-in, and the
+// only 'FVG.new(...)' references bind to the user-defined `type FVG` declared below,
+// not to the imported library. Compiling these unused libraries was the single
+// largest contributor to the compile-time timeout.
 
 //////////////////SMC////////////////////
 bullC = input.color(defval = #14D990, title = 'Bull Color', group = 'Smart Money Concepts', inline = '7')
@@ -70,7 +63,6 @@ if bigData.size() == 0
     bigData.put('upside', 1)
     bigData.put('downside', 1)
 
-[pdHigh, pdLow, dayHigh, dayLow, pdBar, dayBar] = request.security(syminfo.tickerid, '1D', [high[1], low[1], high, low, time[1], time])
 
 type rollingTF
     float highTF = 0
@@ -307,7 +299,7 @@ drawStructureExt() =>
 
     counter
 
-counter = drawStructureExt()
+drawStructureExt()
 
 method updateBox(array<box> id) =>
     if id.size() > 0
@@ -2250,41 +2242,13 @@ Getcolor_candle(_o, _c) =>
 f_secret_candle(_c, _o, _h, _l, i, start, _bar) =>
     n = 5
     m = n - i
-    bl0 = box.new(left = bar_index + dxx + start + 0 + m * 3, top = _c, right = bar_index + dxx + start + 2 + m * 3, bottom = _o, bgcolor = Getcolor_candle(_o, _c), border_color = Getcolor_candle(_o, _c), text = '', text_size = size.tiny, text_valign = text.align_center, text_halign = text.align_center, text_color = color.gray)
-    wup = box.new(left = bar_index + dxx + start + 1 + m * 3, top = _h, right = bar_index + dxx + start + 1 + m * 3, bottom = math.max(_o, _c), border_color = color.new(Getcolor_candle(_o, _c), 30), border_width = 1)
-    wdw = box.new(left = bar_index + dxx + start + 1 + m * 3, top = _l, right = bar_index + dxx + start + 1 + m * 3, bottom = math.min(_o, _c), border_color = color.new(Getcolor_candle(_o, _c), 30), border_width = 1)
+    clr = Getcolor_candle(_o, _c)
+    bl0 = box.new(left = bar_index + dxx + start + 0 + m * 3, top = _c, right = bar_index + dxx + start + 2 + m * 3, bottom = _o, bgcolor = clr, border_color = clr, text = '', text_size = size.tiny, text_valign = text.align_center, text_halign = text.align_center, text_color = color.gray)
+    wup = box.new(left = bar_index + dxx + start + 1 + m * 3, top = _h, right = bar_index + dxx + start + 1 + m * 3, bottom = math.max(_o, _c), border_color = color.new(clr, 30), border_width = 1)
+    wdw = box.new(left = bar_index + dxx + start + 1 + m * 3, top = _l, right = bar_index + dxx + start + 1 + m * 3, bottom = math.min(_o, _c), border_color = color.new(clr, 30), border_width = 1)
     box.delete(bl0[1])
     box.delete(wup[1])
     box.delete(wdw[1])
-
-f_live(_htf) =>
-    var _o0 = open
-    var _h0 = high
-    var _l0 = low
-    var _t0 = time
-    var _c0 = close
-    var _h1 = high
-    var _l1 = low
-    var _t1 = time
-    var _c1 = close
-    var _o1 = open
-    if timeframe.change(_htf)
-        _t0 := bar_index
-        _o0 := open
-        _h0 := high
-        _l0 := low
-    if high >= _h0
-        _h0 := high
-    if low <= _l0
-        _l0 := low
-    if timeframe.change(_htf)
-        _o1 := _o0[1]
-        _h1 := _h0[1]
-        _l1 := _l0[1]
-        _t1 := _t0[1]
-        _c1 := close[1]
-    _c0 := close
-    [_h1, _l1, _c1, _o1, _t1, _h0, _l0, _c0, _o0, _t0]
 
 f_live_sym(_xc0, _xo0, _xh0, _xl0, _xt0, _tf) =>
     var _c1 = 0.0
