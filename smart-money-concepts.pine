@@ -526,8 +526,7 @@ pruneFvg(array<box> arr, bool isDown, bool contract) =>
             primaryBound = isDown ? b.get_top() : b.get_bottom()
             violated = isDown ? (price >= primaryBound) : (price <= primaryBound)
             if violated
-                b.delete()
-                arr.remove(i)
+                arr.remove(i).delete()
             else if contract
                 if isDown
                     if high > b.get_bottom()
