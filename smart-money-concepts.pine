@@ -3601,7 +3601,6 @@ mlAtrLen     = input.int(14,   "ML ATR Period",                minval=5,        
 mlSwingLen   = input.int(5,    "ML Pivot Length",              minval=2,   maxval=20,             group=grp_algo)
 
 grp_mlui   = "🎨 ML Visual Style"
-themeMode  = input.string("Obsidian", "Theme", options=["Obsidian", "Monochrome Alpha"], group=grp_mlui)
 hiProbClr  = input.color(color.rgb(160, 130, 255), "High Probability (>80%)",   group=grp_mlui)
 medProbClr = input.color(color.rgb(200, 180, 255),  "Medium Probability (≥60%)", group=grp_mlui)
 bgTableClr = input.color(color.rgb(8, 8, 14),    "Panel Background",          group=grp_mlui)
@@ -3626,12 +3625,6 @@ tp3Clr          = input.color(color.rgb(220, 130, 180), "TP3 Color (Aggressive)"
 showTpLabels    = input.bool(true,  "Show TP Labels In Box",   group=grp_mltp)
 manualBoxExt    = input.bool(false, "Manual Box Extension Override", group=grp_mltp)
 manualExtBars   = input.int(100,    "Manual Extension (Bars)", minval=2, maxval=500, group=grp_mltp)
-
-grp_mlalerts        = "🔔 ML Probability Alerts"
-enableBullAlert   = input.bool(false, "Enable Bullish CHoCH Alert",          group=grp_mlalerts)
-bullAlertThresh   = input.float(80,   "Bullish Probability Threshold (%)",   minval=50, maxval=100, step=1, group=grp_mlalerts)
-enableBearAlert   = input.bool(false, "Enable Bearish CHoCH Alert",          group=grp_mlalerts)
-bearAlertThresh   = input.float(80,   "Bearish Probability Threshold (%)",   minval=50, maxval=100, step=1, group=grp_mlalerts)
 
 //Choch types
 type ChochFeature
@@ -4017,7 +4010,6 @@ if isBearishChoch
 // Signals for UI
 
 bool chochFired = isBullishChoch or isBearishChoch
-bool validSetup = chochFired and outputSignificanceScore >= minScore
 
 if chochFired
     bool   hasScore    = outputSignificanceScore >= minScore
@@ -4405,8 +4397,6 @@ commission_pct   = input.float(0.0001,"Commission (%)",         minval=0.0, step
 
 col_bull         = input.color(color.rgb(0, 255, 180, 0),    "Bullish Color",       group=grp_vis)
 col_bear         = input.color(color.rgb(255, 30, 120, 0),   "Bearish Color",       group=grp_vis)
-col_neu          = input.color(color.rgb(160, 80, 255, 0),   "Neutral/Text Color",  group=grp_vis)
-col_pend         = input.color(color.rgb(0, 200, 255, 0),    "Pending Pattern Color", group=grp_vis)
 fill_transp      = input.int(80, "Fill Transparency", minval=50, maxval=99, group=grp_vis)
 show_tgt         = input.bool(true,  "Show Measured Targets",     group=grp_vis)
 stop_buffer      = input.float(0.5,  "Stop Loss ATR Buffer", minval=0.0, step=0.1, group=grp_vis)
@@ -4889,7 +4879,6 @@ detectWedge() =>
     float _slope_u         = _h1.i == _h2.i ? 0.0 : (nz(_h1.p) - nz(_h2.p)) / math.max(1, _h1.i - _h2.i)
     float _slope_l         = _l1.i == _l2.i ? 0.0 : (nz(_l1.p) - nz(_l2.p)) / math.max(1, _l1.i - _l2.i)
     int   _start_idx_wedge = math.min(nz(_h2.i), nz(_l2.i))
-    float _wedge_base_h    = math.abs(f_project(_h2.i, _h2.p, _h1.i, _h1.p, _start_idx_wedge) - f_project(_l2.i, _l2.p, _l1.i, _l1.p, _start_idx_wedge))
     float _proj_u_now      = f_project(_h2.i, _h2.p, _h1.i, _h1.p, bar_index)
     float _proj_l_now      = f_project(_l2.i, _l2.p, _l1.i, _l1.p, bar_index)
     float _height_now      = _proj_u_now - _proj_l_now
