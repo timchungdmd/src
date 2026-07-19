@@ -4426,6 +4426,9 @@ type Pivot
     float p
     int   i
 
+// Trimmed to 8 actionable fields (was 26). The drawing-coordinate fields
+// (fux1..lly2) and dead l_upper/l_lower were removed to cut compile cost —
+// pattern OUTLINE drawing is dropped; detection + entry/stop/target + labels stay.
 type PatternResult
     bool   detected
     string name
@@ -4433,33 +4436,15 @@ type PatternResult
     float  entryPrice
     float  stopPrice
     float  targetPrice
-    line   l_upper
-    line   l_lower
     int    start_idx
     int    breakout_idx
-    int    fux1
-    float  fuy1
-    int    fux2
-    float  fuy2
-    int    flx1
-    float  fly1
-    int    flx2
-    float  fly2
-    int    lux1
-    float  luy1
-    int    lux2
-    float  luy2
-    int    llx1
-    float  lly1
-    int    llx2
-    float  lly2
 
 type PatternDrawings
     line[]  lns
     label[] lbls
 
 // ── PERSISTENT STATE ─────────────────────────────────────────────────────────
-var PatternResult EMPTY_RES = PatternResult.new(false, "", false, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na, na)
+var PatternResult EMPTY_RES = PatternResult.new(false, "", false, na, na, na, na, na)
 var array<Pivot> pivotHighs = array.new<Pivot>()
 var array<Pivot> pivotLows  = array.new<Pivot>()
 
@@ -4615,13 +4600,6 @@ f_validate_pattern(int b_idx, float entry_p, float stop_p, float target_p) =>
                 valid := false
         valid
 
-f_fill_sliced(int ux1, float uy1, int ux2, float uy2, int lx1, float ly1, int lx2, float ly2, color fill_col, array<line> lns_arr) =>
-    line ln_top = line.new(ux1, uy1, ux2, uy2, color=color.new(fill_col, 100), width=1)
-    line ln_bot = line.new(lx1, ly1, lx2, ly2, color=color.new(fill_col, 100), width=1)
-    linefill.new(ln_top, ln_bot, color.new(fill_col, fill_transp))
-    array.push(lns_arr, ln_top)
-    array.push(lns_arr, ln_bot)
-
 f_manage_drawings(int max_items) =>
     while array.size(pat_history) > max_items
         PatternDrawings old_pat = array.shift(pat_history)
@@ -4669,14 +4647,14 @@ detectHS() =>
                 if f_isValidSize(_ht_hs, close)
                     if not na(_b_hs)
                         if not na(_ep_hs) and _val_hs and show_hs_std
-                            res         := PatternResult.new(true, "Head & Shoulders", false, _ep_hs, _sp_hs, _tp_hs, na, na, _ls.i, _b_hs, _ls.i, _head.p, _b_hs, _na_hs, _l_neck_l.i, _l_neck_l.p, _b_hs, _na_hs, na, na, na, na, _l_neck_l.i, _l_neck_l.p, _b_hs, _na_hs)
+                            res         := PatternResult.new(true, "Head & Shoulders", false, _ep_hs, _sp_hs, _tp_hs, _ls.i, _b_hs)
     if not res.detected and _has_ihs
         if _rs_inv.i > _h_neck_r.i and _h_neck_r.i > _head_inv.i and _head_inv.i > _h_neck_l.i and _h_neck_l.i > _ls_inv.i
             if _head_inv.p < _rs_inv.p and _head_inv.p < _ls_inv.p and f_isNear(_ls_inv.p, _rs_inv.p, sym_tol)
                 if f_isValidSize(_ht_ihs, close)
                     if not na(_b_ihs)
                         if not na(_ep_ihs) and _val_ihs and show_hs_inv
-                            res         := PatternResult.new(true, "Inv Head & Shoulders", true, _ep_ihs, _sp_ihs, _tp_ihs, na, na, _ls_inv.i, _b_ihs, _h_neck_l.i, _h_neck_l.p, _b_ihs, _na_ihs, _ls_inv.i, _head_inv.p, _b_ihs, _na_ihs, _h_neck_l.i, _h_neck_l.p, _b_ihs, _na_ihs, na, na, na, na)
+                            res         := PatternResult.new(true, "Inv Head & Shoulders", true, _ep_ihs, _sp_ihs, _tp_ihs, _ls_inv.i, _b_ihs)
     res
 
 detectDouble() =>
@@ -4708,13 +4686,13 @@ detectDouble() =>
             if f_isValidSize(_ht_dt, close)
                 if not na(_b_dt)
                     if not na(_ep_dt) and _val_dt and show_dt_top
-                        res := PatternResult.new(true, "Double Top", false, _ep_dt, _sp_dt, _tp_dt, na, na, _p2.i, _b_dt, _p2.i, _avg_top, _b_dt, _avg_top, _mid.i, _mid.p, _b_dt, _mid.p, na, na, na, na, _mid.i, _mid.p, _b_dt, _mid.p)
+                        res := PatternResult.new(true, "Double Top", false, _ep_dt, _sp_dt, _tp_dt, _p2.i, _b_dt)
     if not res.detected and _has_db
         if _p1b.i > _mid_b.i and _mid_b.i > _p2b.i and f_isNear(_p1b.p, _p2b.p, lvl_tol)
             if f_isValidSize(_ht_db, close)
                 if not na(_b_db)
                     if not na(_ep_db) and _val_db and show_dt_bot
-                        res := PatternResult.new(true, "Double Bottom", true, _ep_db, _sp_db, _tp_db, na, na, _p2b.i, _b_db, _mid_b.i, _mid_b.p, _b_db, _mid_b.p, _p2b.i, _avg_bot, _b_db, _avg_bot, _mid_b.i, _mid_b.p, _b_db, _mid_b.p, na, na, na, na)
+                        res := PatternResult.new(true, "Double Bottom", true, _ep_db, _sp_db, _tp_db, _p2b.i, _b_db)
     res
 
 detectTriple() =>
@@ -4753,16 +4731,14 @@ detectTriple() =>
                 if f_isValidSize(_ht_tt, close)
                     if not na(_b_tt)
                         if not na(_ep_tt) and _val_tt and show_tt_top
-                            float _avg_top_tt = math.max(_h1.p, math.max(_h2.p, _h3.p))
-                            res := PatternResult.new(true, "Triple Top", false, _ep_tt, _sp_tt, _tp_tt, na, na, _h3.i, _b_tt, _h3.i, _avg_top_tt, _b_tt, _avg_top_tt, _l2t.i, _neck_tt, _b_tt, _na_tt, na, na, na, na, _l2t.i, _neck_tt, _b_tt, _na_tt)
+                            res := PatternResult.new(true, "Triple Top", false, _ep_tt, _sp_tt, _tp_tt, _h3.i, _b_tt)
     if not res.detected and _has_tb
         if _l1b.i > _h1b.i and _h1b.i > _l2b.i and _l2b.i > _h2b.i and _h2b.i > _l3b.i
             if f_isNear(_l1b.p, _l2b.p, lvl_tol) and f_isNear(_l2b.p, _l3b.p, lvl_tol)
                 if f_isValidSize(_ht_tb, close)
                     if not na(_b_tb)
                         if not na(_ep_tb) and _val_tb and show_tt_bot
-                            float _avg_bot_tt = math.min(_l1b.p, math.min(_l2b.p, _l3b.p))
-                            res := PatternResult.new(true, "Triple Bottom", true, _ep_tb, _sp_tb, _tp_tb, na, na, _l3b.i, _b_tb, _h2b.i, _neck_tb, _b_tb, _na_tb, _l3b.i, _avg_bot_tt, _b_tb, _avg_bot_tt, _h2b.i, _neck_tb, _b_tb, _na_tb, na, na, na, na)
+                            res := PatternResult.new(true, "Triple Bottom", true, _ep_tb, _sp_tb, _tp_tb, _l3b.i, _b_tb)
     res
 
 detectCupHandle() =>
@@ -4796,14 +4772,14 @@ detectCupHandle() =>
                 if f_isValidSize(_cup_h_std, close)
                     if not na(_b_cup)
                         if not na(_ep_cup) and _val_cup and show_cup_std
-                            res := PatternResult.new(true, "Cup & Handle", true, _ep_cup, _sp_cup, _tp_cup, na, na, _h_left.i, _b_cup, _h_left.i, _h_left.p, _b_cup, _na_cup, _h_left.i, _l_bot.p, _b_cup, _l_handle.p, _h_left.i, _h_rim.p, _b_cup, _na_cup, na, na, na, na)
+                            res := PatternResult.new(true, "Cup & Handle", true, _ep_cup, _sp_cup, _tp_cup, _h_left.i, _b_cup)
     if not res.detected and _has_cup
         if _h_handle.i > _l_rim.i and _l_rim.i > _h_top.i and _h_top.i > _l_left.i
             if f_isNear(_l_rim.p, _l_left.p, sym_tol) and _h_handle.p < _h_top.p and _h_handle.p > _l_rim.p
                 if f_isValidSize(_cup_h_inv, close)
                     if not na(_b_inv)
                         if not na(_ep_inv) and _val_inv and show_cup_inv
-                            res := PatternResult.new(true, "Inv Cup & Handle", false, _ep_inv, _sp_inv, _tp_inv, na, na, _l_left.i, _b_inv, _l_left.i, _h_top.p, _b_inv, _h_handle.p, _l_left.i, _l_left.p, _b_inv, _na_inv, na, na, na, na, _l_left.i, _l_rim.p, _b_inv, _na_inv)
+                            res := PatternResult.new(true, "Inv Cup & Handle", false, _ep_inv, _sp_inv, _tp_inv, _l_left.i, _b_inv)
     res
 
 detectFlagPennant() =>
@@ -4838,35 +4814,12 @@ detectFlagPennant() =>
             if not na(_b_bull)
                 if not na(_ep_bull) and _val_bull
                     if (_parallel and show_flag_bull) or (not _parallel and show_pennant_bull)
-                        res := PatternResult.new(true, _parallel ? "Bullish Flag" : "Bullish Pennant", true, _ep_bull, _sp_bull, _tp_bull, na, na, _h2.i, _b_bull, _h2.i, _h2.p, _b_bull, _ub_bull, _l2.i, _l2.p, _b_bull, _lb_bull, na, na, na, na, na, na, na, na)
+                        res := PatternResult.new(true, _parallel ? "Bullish Flag" : "Bullish Pennant", true, _ep_bull, _sp_bull, _tp_bull, _h2.i, _b_bull)
         else if _slope_u > 0 and _slope_l > 0
             if not na(_b_bear)
                 if not na(_ep_bear) and _val_bear
                     if (_parallel and show_flag_bear) or (not _parallel and show_pennant_bear)
-                        res := PatternResult.new(true, _parallel ? "Bearish Flag" : "Bearish Pennant", false, _ep_bear, _sp_bear, _tp_bear, na, na, _h2.i, _b_bear, _h2.i, _h2.p, _b_bear, _ub_bear, _l2.i, _l2.p, _b_bear, _lb_bear, na, na, na, na, na, na, na, na)
-    if res.detected
-        int   _sb  = math.min(_h2.i, _l2.i)
-        int   _bi  = res.breakout_idx
-        float _ubs = f_project(_h2.i, _h2.p, _h1.i, _h1.p, _bi)
-        float _lbs = f_project(_l2.i, _l2.p, _l1.i, _l1.p, _bi)
-        float _uss = f_project(_h2.i, _h2.p, _h1.i, _h1.p, _sb)
-        float _lss = f_project(_l2.i, _l2.p, _l1.i, _l1.p, _sb)
-        res.fux1  := _sb
-        res.fuy1  := _uss
-        res.fux2  := _bi
-        res.fuy2  := _ubs
-        res.flx1  := _sb
-        res.fly1  := _lss
-        res.flx2  := _bi
-        res.fly2  := _lbs
-        res.lux1  := _sb
-        res.luy1  := _uss
-        res.lux2  := _bi
-        res.luy2  := _ubs
-        res.llx1  := _sb
-        res.lly1  := _lss
-        res.llx2  := _bi
-        res.lly2  := _lbs
+                        res := PatternResult.new(true, _parallel ? "Bearish Flag" : "Bearish Pennant", false, _ep_bear, _sp_bear, _tp_bear, _h2.i, _b_bear)
     res
 
 detectWedge() =>
@@ -4900,34 +4853,11 @@ detectWedge() =>
         if _slope_u < 0 and _slope_l < 0 and _slope_l < _slope_u
             if not na(_b_fall)
                 if not na(_ep_fall) and _val_fall and show_wedge_fall
-                    res := PatternResult.new(true, "Falling Wedge", true, _ep_fall, _sp_fall, _tp_fall, na, na, _h2.i, _b_fall)
+                    res := PatternResult.new(true, "Falling Wedge", true, _ep_fall, _sp_fall, _tp_fall, _h2.i, _b_fall)
         else if _slope_u > 0 and _slope_l > 0 and _slope_l > _slope_u
             if not na(_b_rise)
                 if not na(_ep_rise) and _val_rise and show_wedge_rise
-                    res := PatternResult.new(true, "Rising Wedge", false, _ep_rise, _sp_rise, _tp_rise, na, na, _h2.i, _b_rise)
-    if res.detected
-        int   _sb  = math.min(_h2.i, _l2.i)
-        int   _bi  = res.breakout_idx
-        float _ubs = f_project(_h2.i, _h2.p, _h1.i, _h1.p, _bi)
-        float _lbs = f_project(_l2.i, _l2.p, _l1.i, _l1.p, _bi)
-        float _uss = f_project(_h2.i, _h2.p, _h1.i, _h1.p, _sb)
-        float _lss = f_project(_l2.i, _l2.p, _l1.i, _l1.p, _sb)
-        res.fux1  := _h2.i
-        res.fuy1  := _h2.p
-        res.fux2  := _bi
-        res.fuy2  := _ubs
-        res.flx1  := _l2.i
-        res.fly1  := _l2.p
-        res.flx2  := _bi
-        res.fly2  := _lbs
-        res.lux1  := _sb
-        res.luy1  := _uss
-        res.lux2  := _bi
-        res.luy2  := _ubs
-        res.llx1  := _sb
-        res.lly1  := _lss
-        res.llx2  := _bi
-        res.lly2  := _lbs
+                    res := PatternResult.new(true, "Rising Wedge", false, _ep_rise, _sp_rise, _tp_rise, _h2.i, _b_rise)
     res
 
 detectTriangles() =>
@@ -4962,35 +4892,12 @@ detectTriangles() =>
             if not na(_b_bull)
                 if not na(_ep_bull) and _val_bull and show_tri_gen
                     bool _isBullish = math.abs(_slope_u) < _flat_tol
-                    res := PatternResult.new(true, _isBullish ? "Ascending Triangle" : "Symmetrical Triangle", true, _ep_bull, _sp_bull, _tp_bull, na, na, _h2.i, _b_bull)
+                    res := PatternResult.new(true, _isBullish ? "Ascending Triangle" : "Symmetrical Triangle", true, _ep_bull, _sp_bull, _tp_bull, _h2.i, _b_bull)
         if not res.detected and ((_slope_u < 0 and _slope_l > 0) or (_slope_u < 0 and math.abs(_slope_l) < _flat_tol))
             if not na(_b_bear)
                 if not na(_ep_bear) and _val_bear and show_tri_gen
                     bool _isBearish = math.abs(_slope_l) < _flat_tol
-                    res := PatternResult.new(true, _isBearish ? "Descending Triangle" : "Symmetrical Triangle", false, _ep_bear, _sp_bear, _tp_bear, na, na, _h2.i, _b_bear)
-    if res.detected
-        int   _sb  = math.min(_h2.i, _l2.i)
-        int   _bi  = res.breakout_idx
-        float _ubs = f_project(_h2.i, _h2.p, _h1.i, _h1.p, _bi)
-        float _lbs = f_project(_l2.i, _l2.p, _l1.i, _l1.p, _bi)
-        float _uss = f_project(_h2.i, _h2.p, _h1.i, _h1.p, _sb)
-        float _lss = f_project(_l2.i, _l2.p, _l1.i, _l1.p, _sb)
-        res.fux1  := _h2.i
-        res.fuy1  := _h2.p
-        res.fux2  := _bi
-        res.fuy2  := _ubs
-        res.flx1  := _l2.i
-        res.fly1  := _l2.p
-        res.flx2  := _bi
-        res.fly2  := _lbs
-        res.lux1  := _sb
-        res.luy1  := _uss
-        res.lux2  := _bi
-        res.luy2  := _ubs
-        res.llx1  := _sb
-        res.lly1  := _lss
-        res.llx2  := _bi
-        res.lly2  := _lbs
+                    res := PatternResult.new(true, _isBearish ? "Descending Triangle" : "Symmetrical Triangle", false, _ep_bear, _sp_bear, _tp_bear, _h2.i, _b_bear)
     res
 
 detectRectangles() =>
@@ -5021,21 +4928,10 @@ detectRectangles() =>
     if _has and _is_flat and f_isNear(_slope_u, _slope_l, 0.5) and f_isValidSize(_height, close)
         if not na(_b_bull)
             if not na(_ep_bull) and _val_bull and show_rect_gen
-                res := PatternResult.new(true, "Rectangle", true, _ep_bull, _sp_bull, _tp_bull, na, na, _h2.i, _b_bull, _start_rect, _avg_top, _b_bull, _avg_top, _start_rect, _avg_bot, _b_bull, _avg_bot, na, na, na, na, na, na, na, na)
+                res := PatternResult.new(true, "Rectangle", true, _ep_bull, _sp_bull, _tp_bull, _h2.i, _b_bull)
         if not res.detected and not na(_b_bear)
             if not na(_ep_bear) and _val_bear and show_rect_gen
-                res := PatternResult.new(true, "Rectangle", false, _ep_bear, _sp_bear, _tp_bear, na, na, _h2.i, _b_bear, _start_rect, _avg_top, _b_bear, _avg_top, _start_rect, _avg_bot, _b_bear, _avg_bot, na, na, na, na, na, na, na, na)
-    if res.detected
-        int   _sb  = math.min(_h2.i, _l2.i)
-        int   _bi  = res.breakout_idx
-        res.lux1  := _sb
-        res.luy1  := _avg_top
-        res.lux2  := _bi
-        res.luy2  := _avg_top
-        res.llx1  := _sb
-        res.lly1  := _avg_bot
-        res.llx2  := _bi
-        res.lly2  := _avg_bot
+                res := PatternResult.new(true, "Rectangle", false, _ep_bear, _sp_bear, _tp_bear, _h2.i, _b_bear)
     res
 
 // ── PIVOT COLLECTION & PENDING LINES ─────────────────────────────────────────
@@ -5102,33 +4998,16 @@ if _is_new_pattern
     dash_stop            := res.stopPrice
     dash_target          := res.targetPrice
 
-    color  col = res.isBullish ? col_bull : col_bear
     string txt = res.name
 
-    if not na(res.fux1) and not na(res.fuy1) and not na(res.fux2) and not na(res.fuy2)
-        f_fill_sliced(res.fux1, res.fuy1, res.fux2, res.fuy2, res.flx1, res.fly1, res.flx2, res.fly2, col, current_pat.lns)
-
-    if not na(res.lux1)
-        ln_u = line.new(res.lux1, res.luy1, res.lux2, res.luy2, color=col, width=2)
-        if extend_lines
-            line.set_extend(ln_u, extend.right)
-        array.push(current_pat.lns, ln_u)
-
-    if not na(res.llx1)
-        ln_l = line.new(res.llx1, res.lly1, res.llx2, res.lly2, color=col, width=2)
-        if extend_lines
-            line.set_extend(ln_l, extend.right)
-        array.push(current_pat.lns, ln_l)
-
-    if not na(res.start_idx) and not na(res.breakout_idx)
-        int   _cx      = (res.start_idx + res.breakout_idx) / 2
-        float _uy_mid  = not na(res.lux1) ? f_project(res.lux1, res.luy1, res.lux2, res.luy2, _cx) : not na(res.fux1) ? f_project(res.fux1, res.fuy1, res.fux2, res.fuy2, _cx) : na
-        float _ly_mid  = not na(res.llx1) ? f_project(res.llx1, res.lly1, res.llx2, res.lly2, _cx) : not na(res.flx1) ? f_project(res.flx1, res.fly1, res.flx2, res.fly2, _cx) : na
-        float _cy      = not na(_uy_mid) and not na(_ly_mid) ? (_uy_mid + _ly_mid) / 2 : not na(_uy_mid) ? _uy_mid : not na(_ly_mid) ? _ly_mid : na
-        if not na(_cy)
-            string _lbl_sz_ctr = lbl_scale_en ? (lbl_scale_sel == "Small" ? size.small : lbl_scale_sel == "Large" ? size.large : size.normal) : size.small
-            lbl = label.new(_cx, _cy, txt, color=color.rgb(0, 0, 0, 0), textcolor=color.white, style=label.style_label_center, size=_lbl_sz_ctr)
-            array.push(current_pat.lbls, lbl)
+    // Outline drawing removed for compile budget; place the pattern-name label at
+    // the pattern midpoint / entry level.
+    if not na(res.start_idx) and not na(res.breakout_idx) and not na(res.entryPrice)
+        int   _cx = (res.start_idx + res.breakout_idx) / 2
+        float _cy = res.entryPrice
+        string _lbl_sz_ctr = lbl_scale_en ? (lbl_scale_sel == "Small" ? size.small : lbl_scale_sel == "Large" ? size.large : size.normal) : size.small
+        lbl = label.new(_cx, _cy, txt, color=color.rgb(0, 0, 0, 0), textcolor=color.white, style=label.style_label_center, size=_lbl_sz_ctr)
+        array.push(current_pat.lbls, lbl)
 
     if alert_en and not na(res.entryPrice) and not na(res.targetPrice) and not na(res.stopPrice)
         string _alert_json = "{" + str.format('"ticker":"{0}","pattern":"{1}","bias":"{2}","entry":{3},"tp":{4},"sl":{5}', syminfo.tickerid, txt, res.isBullish ? "bull" : "bear", str.tostring(res.entryPrice, format.mintick), str.tostring(res.targetPrice, format.mintick), str.tostring(res.stopPrice, format.mintick)) + "}"
