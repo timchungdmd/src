@@ -996,6 +996,8 @@ h = input.bool(true, 'Show Histogram', group = g)
 oscPlacement = input.string('Bottom', '', options = ['Top', 'Bottom'], inline = 'VOL', group = g)
 oscHight = 21 - input.int(7, ' Hight', minval = 1, maxval = 10, inline = 'VOL', group = g) * 2
 lookbackLength = input.int(200, 'Overlay Indicator Display Length', minval = 10, maxval = 495, group = g)
+cvdSize  = input.float(3.0, 'CVD Size (Height)', minval = 0.1, maxval = 20.0, step = 0.5, inline = 'CVDSZ', group = g, tooltip = 'Vertical size multiplier for the CVD histogram. Higher = taller and more visible. (Works on top of the "Hight" setting.)')
+cvdWidth = input.int(3, 'Bar Width', minval = 1, maxval = 10, inline = 'CVDSZ', group = g, tooltip = 'Thickness of each CVD bar. Higher = thicker and easier to see.')
 
 // Optimized API Calls: Reduced from 26 to 3 conditional calls
 Vsum = 0.0
@@ -1051,7 +1053,7 @@ if barstate.islast and h
         for i = 1 to array.size(a_fill) by 1
             linefill.delete(array.shift(a_fill))
 
-    priceChangeRate = (priceHighest - priceLowest) / priceHighest / oscHight
+    priceChangeRate = (priceHighest - priceLowest) / priceHighest / oscHight * cvdSize
 
     for barIndex = 0 to lookbackLength - 1 by 1
         cvdValue = cvdHistogram[barIndex]
@@ -1062,7 +1064,7 @@ if barstate.islast and h
         else
             basePrice
 
-        array.push(a_lines, line.new(x1 = bar_index[barIndex], y1 = basePrice, x2 = bar_index[barIndex], y2 = endPrice, xloc = xloc.bar_index, extend = extend.none, color = cvdColor[barIndex], style = line.style_solid, width = 2))
+        array.push(a_lines, line.new(x1 = bar_index[barIndex], y1 = basePrice, x2 = bar_index[barIndex], y2 = endPrice, xloc = xloc.bar_index, extend = extend.none, color = cvdColor[barIndex], style = line.style_solid, width = cvdWidth))
 
 /////////Secret Candle Pattern//////////
 show_candle = input.bool(defval = true, title = 'Show candles 1', group = 'Sequence 1')
