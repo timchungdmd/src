@@ -2,7 +2,7 @@
 // © LuxAlgo
 
 //@version=6
-indicator('Smart Money Concepts [LUX]', 'Smart Money Concepts [LuxAlgo]', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 500)
+indicator('Smart Money Concepts [LUX]', 'Smart Money Concepts [LuxAlgo]', overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 1000)
 
 // NOTE: All library imports were removed — none of the imported namespaces
 // (Refiner/Drawing/FVG/Liq/Alert/D/PF/ND/M/SMC and the unaliased ta) is referenced
@@ -1066,156 +1066,404 @@ if barstate.islast and h
 
         array.push(a_lines, line.new(x1 = bar_index[barIndex], y1 = basePrice, x2 = bar_index[barIndex], y2 = endPrice, xloc = xloc.bar_index, extend = extend.none, color = cvdColor[barIndex], style = line.style_solid, width = cvdWidth))
 
-clear = input.int(5000, 'Remove Levels After x Bars', group = 'Main Settings', tooltip = 'How many bars after the fixed levels are considered irrelevant')
-len = input.int(200, 'Clustering Training Length', group = 'Main Settings', tooltip = 'The lookback window for the maching learning algorithm')
-srConfirmLen = input.int(50, 'Confirmation Length for Fixed Levels ', group = 'Main Settings', tooltip = 'The confirmation length for fixed levels')
-shw = input.bool(true, 'Show Trailing Levels', group = 'Appearance')
-shw1 = input.bool(true, 'Show Fixed Levels', group = 'Appearance')
-collvls = input.bool(false, 'Color Fixed Levels', group = 'Appearance', tooltip = 'Colors fixed levels based on whether price is above or below the level. This is computationally intensive so turn off this setting if the indicator is unable to load.')
-green = input.color(#00ffbb, 'Bullish Color', group = 'Appearance')
-red = input.color(#ff1100, 'Bearish Color', group = 'Appearance')
+//==============================================================================
+//        MACHINE LEARNING SUPPORT & RESISTANCE  (© FEELS)
+//------------------------------------------------------------------------------
+// Merged into the single indicator. Stand-alone @version/indicator() header
+// removed. Replaces the previous K-Means clustering S/R engine. Collision fix:
+// `boxes` -> `mlsr_boxes` (clashed with the DeltaFlow VP box array), and the
+// pivot vars `ph`/`pl` -> `mlsr_ph`/`mlsr_pl` (bare ph/pl are global pivots in
+// the Pivot Channel section). All other identifiers (pivLen, histBars, f_kmeans,
+// f_silhouette, f_holdRate, stat, pvP/pvB, etc.) are unique in this file. The
+// engine's `Hold rate -> Lookback, bars` setting reads deep history; the main
+// indicator's max_bars_back was raised to 1000 to cover its default range.
+//==============================================================================
 
-// Highly Optimized K-Means: Eliminated array allocations inside while loop
-k_means_optimize_centroids(value, lookback, init_centroid_1, init_centroid_2, init_centroid_3) =>
-    amean = init_centroid_1
-    bmean = init_centroid_2
-    cmean = init_centroid_3
-    
-    if nz(value) > 0 and bar_index >= lookback - 1
-        converged = false
-        iter = 0
-        // Reduced iterations from 10 to 5 to prevent timeout
-        while not converged and iter < 5
-            sum_a = 0.0
-            cnt_a = 0
-            sum_b = 0.0
-            cnt_b = 0
-            sum_c = 0.0
-            cnt_c = 0
-            
-            for i = lookback - 1 to 0 by 1
-                val = value[i]
-                dist_a = math.abs(val - amean)
-                dist_b = math.abs(val - bmean)
-                dist_c = math.abs(val - cmean)
-                
-                if dist_a <= dist_b and dist_a <= dist_c
-                    sum_a += val
-                    cnt_a += 1
-                else if dist_b <= dist_a and dist_b <= dist_c
-                    sum_b += val
-                    cnt_b += 1
-                else
-                    sum_c += val
-                    cnt_c += 1
-            
-            new_amean = cnt_a > 0 ? sum_a / cnt_a : amean
-            new_bmean = cnt_b > 0 ? sum_b / cnt_b : bmean
-            new_cmean = cnt_c > 0 ? sum_c / cnt_c : cmean
-            
-            if new_amean == amean and new_bmean == bmean and new_cmean == cmean
-                converged := true
+//--- inputs
+pivLen   = input.int(10, "Swing size", minval = 2, maxval = 50, tooltip = "Pivot width on each side. Bigger = fewer, more significant swing points feed the model")
+histBars = input.int(1000, "History, bars", minval = 200, maxval = 5000, step = 100, tooltip = "Only swing points from this many recent bars feed the model, so levels come from structure that still matters")
+maxPiv   = input.int(250, "Swing points used", minval = 20, maxval = 400, tooltip = "How many of the most recent swing highs and lows the model runs on")
+autoK    = input.bool(true, "Model picks the level count", tooltip = "The model tries every level count in the range below, scores how cleanly each one separates the swings, and keeps the best. Turn off to fix the count yourself")
+kMin     = input.int(3, "Fewest levels", minval = 2, maxval = 12, tooltip = "Lower end of the range the model searches")
+kMax     = input.int(9, "Most levels", minval = 3, maxval = 14, tooltip = "Upper end of the range the model searches")
+kFix     = input.int(6, "Level count", minval = 2, maxval = 14, tooltip = "Used when the model is not picking the count itself")
+minPts   = input.int(3, "Min swings per level", minval = 2, maxval = 20, tooltip = "A group with fewer swings than this is not treated as a level, and its swings are labelled noise")
+selPct   = input.int(60, "Selectivity", minval = 0, maxval = 200, step = 10, tooltip = "How concentrated a group must be to count as a level, measured against the average group on the chart. Higher values keep only the levels where swings really pile up and label the rest noise")
+maxZones = input.int(8, "Max levels shown", minval = 1, maxval = 20, tooltip = "Only the levels nearest to price are drawn")
+maxDist  = input.float(60, "Max distance from price, %", minval = 0, maxval = 500, step = 10, tooltip = "Levels further than this from the current price are hidden, measured proportionally so up and down are treated alike. Set 0 to show every level")
+passes   = input.int(15, "Refinement passes", minval = 3, maxval = 40, tooltip = "How many times the model re-centres the groups before settling")
+
+grpW = "Zone width"
+minWIn = input.float(0.15, "Minimum width, %", minval = 0.05, maxval = 5, step = 0.05, group = grpW, tooltip = "A very tight group still draws at least this wide so it stays visible")
+maxWIn = input.float(1.0, "Maximum width, %", minval = 0.1, maxval = 25, step = 0.1, group = grpW, tooltip = "Safety cap. A group is never drawn wider than this share of its level")
+maxWRng = input.float(6.0, "Maximum width, % of range", minval = 1, maxval = 50, step = 1, group = grpW, tooltip = "Second cap, measured against the whole price range the model looked at. This keeps zones thin on intraday charts, where the range is small and a percentage of price would cover the screen")
+softEdge = input.bool(true, "Density edges", group = grpW, tooltip = "Draws each level as a dense core fading into softer edges, so a tightly agreed level looks sharp and a loosely agreed one looks blurred")
+
+grpP = "Density profile"
+showProf = input.bool(false, "Show profile", group = grpP, tooltip = "Draws how the swing points are distributed across price, which is the raw data the model works on")
+profBins = input.int(48, "Resolution", minval = 12, maxval = 100, group = grpP)
+profW    = input.int(70, "Width, bars", minval = 10, maxval = 200, group = grpP)
+
+grpT = "Hold rate"
+showStats = input.bool(true, "Show hold rate", group = grpT, tooltip = "Counts how often price entered a level and left from the same side instead of closing through it")
+showTable = input.bool(true, "Show table", group = grpT)
+statBack  = input.int(500, "Lookback, bars", minval = 100, maxval = 1500, group = grpT)
+statWin   = input.int(10, "Reaction window, bars", minval = 3, maxval = 100, group = grpT, tooltip = "How long price has to close through a level before that visit counts as broken")
+
+grpS = "Style"
+supCol   = input.color(#089981, "Support", group = grpS)
+resCol   = input.color(#f23645, "Resistance", group = grpS)
+noiseCol = input.color(#787b86, "Noise", group = grpS, tooltip = "Swings the model rejected as too sparse to form a level")
+showDots = input.bool(true, "Show swing points", group = grpS, tooltip = "Draws every swing point the model looked at, coloured by the level it belongs to")
+showNoise = input.bool(true, "Show rejected swings", group = grpS)
+dotSizeS = input.string("Large", "Swing point size", options = ["Tiny", "Small", "Normal", "Large"], group = grpS)
+showMid  = input.bool(true, "Show level centre", group = grpS)
+extBars  = input.int(8, "Extend right, bars", minval = 0, maxval = 100, group = grpS)
+txtSizeS = input.string("Small", "Text size", options = ["Tiny", "Small", "Normal", "Large"], group = grpS)
+
+txtSize = txtSizeS == "Tiny" ? size.tiny : txtSizeS == "Normal" ? size.normal : txtSizeS == "Large" ? size.large : size.small
+dotSize = dotSizeS == "Large" ? size.large : dotSizeS == "Normal" ? size.normal : dotSizeS == "Small" ? size.small : size.tiny
+
+//--- state
+var pvP = array.new<float>()
+var pvB = array.new<int>()
+var mlsr_boxes = array.new<box>()
+var tags  = array.new<label>()
+var dots  = array.new<label>()
+var mids  = array.new<line>()
+
+mlsr_ph = ta.pivothigh(pivLen, pivLen)
+mlsr_pl = ta.pivotlow(pivLen, pivLen)
+
+//--- k-means in one dimension, deterministic quantile seeding
+f_kmeans(array<float> data, int k, int iters) =>
+    n = array.size(data)
+    cent = array.new<float>(k, 0.0)
+    if n > 0
+        srt = array.copy(data)
+        array.sort(srt)
+        for i = 0 to k - 1
+            idx = math.max(0, math.min(n - 1, int((i + 0.5) * n / k)))
+            array.set(cent, i, array.get(srt, idx))
+        for it = 1 to iters
+            sums = array.new<float>(k, 0.0)
+            cnts = array.new<int>(k, 0)
+            for j = 0 to n - 1
+                v = array.get(data, j)
+                best = 0
+                bd = math.abs(v - array.get(cent, 0))
+                for c = 1 to k - 1
+                    d = math.abs(v - array.get(cent, c))
+                    if d < bd
+                        bd := d
+                        best := c
+                array.set(sums, best, array.get(sums, best) + v)
+                array.set(cnts, best, array.get(cnts, best) + 1)
+            for c = 0 to k - 1
+                if array.get(cnts, c) > 0
+                    array.set(cent, c, array.get(sums, c) / array.get(cnts, c))
+    cent
+
+f_nearest(array<float> cent, float v) =>
+    best = 0
+    bd = math.abs(v - array.get(cent, 0))
+    for c = 1 to array.size(cent) - 1
+        d = math.abs(v - array.get(cent, c))
+        if d < bd
+            bd := d
+            best := c
+    best
+
+//--- silhouette: how much closer a swing sits to its own centre than to the next best one
+f_silhouette(array<float> data, array<float> cent) =>
+    n = array.size(data)
+    k = array.size(cent)
+    tot = 0.0
+    cnt = 0
+    for j = 0 to n - 1
+        v = array.get(data, j)
+        d1 = 1e9
+        d2 = 1e9
+        for c = 0 to k - 1
+            d = math.abs(v - array.get(cent, c))
+            if d < d1
+                d2 := d1
+                d1 := d
+            else if d < d2
+                d2 := d
+        if d2 > 0
+            tot += (d2 - d1) / d2
+            cnt += 1
+    cnt > 0 ? tot / cnt : 0.0
+
+//--- how often price entered the zone and left from the side it came from
+f_holdRate(float bot, float top) =>
+    visits = 0
+    held = 0
+    lim = math.min(statBack, bar_index - 1)
+    if lim > statWin + 2
+        for o = lim to statWin + 1
+            if o <= 4980
+                inNow = low[o] <= top and high[o] >= bot
+                inPrev = low[o + 1] <= top and high[o + 1] >= bot
+                if inNow and not inPrev
+                    fromBelow = close[o + 1] < bot
+                    fromAbove = close[o + 1] > top
+                    if fromBelow or fromAbove
+                        visits += 1
+                        broke = false
+                        for f = 1 to statWin
+                            c = close[o - f]
+                            if not broke and (fromBelow ? c > top : c < bot)
+                                broke := true
+                        if not broke
+                            held += 1
+    [visits, held]
+
+f_clear() =>
+    if array.size(mlsr_boxes) > 0
+        for i = 0 to array.size(mlsr_boxes) - 1
+            box.delete(array.get(mlsr_boxes, i))
+        array.clear(mlsr_boxes)
+    if array.size(tags) > 0
+        for i = 0 to array.size(tags) - 1
+            label.delete(array.get(tags, i))
+        array.clear(tags)
+    if array.size(dots) > 0
+        for i = 0 to array.size(dots) - 1
+            label.delete(array.get(dots, i))
+        array.clear(dots)
+    if array.size(mids) > 0
+        for i = 0 to array.size(mids) - 1
+            line.delete(array.get(mids, i))
+        array.clear(mids)
+
+//--- collect confirmed swing points
+if barstate.isconfirmed
+    if not na(mlsr_ph) and mlsr_ph > 0
+        array.push(pvP, mlsr_ph)
+        array.push(pvB, bar_index - pivLen)
+    if not na(mlsr_pl) and mlsr_pl > 0
+        array.push(pvP, mlsr_pl)
+        array.push(pvB, bar_index - pivLen)
+    while array.size(pvP) > maxPiv
+        array.shift(pvP)
+        array.shift(pvB)
+    while array.size(pvB) > 0 and bar_index - array.get(pvB, 0) > histBars
+        array.shift(pvP)
+        array.shift(pvB)
+
+//--- cluster and draw on the last bar
+var table stat = table.new(position.top_right, 3, 24, border_width = 1)
+touched = false
+brokeZ  = false
+
+//--- only swings inside the price band that still matters reach the model,
+//--- otherwise a long weekly history spans several orders of magnitude
+band = maxDist == 0 ? 1e9 : math.log(1 + maxDist * 1.5 / 100)
+fp = array.new<float>()
+fb = array.new<int>()
+if barstate.islast and array.size(pvP) > 0
+    need = kMin * minPts + 2
+    for att = 1 to 4
+        if array.size(fp) < need
+            array.clear(fp)
+            array.clear(fb)
+            b2 = band * att
+            for j = 0 to array.size(pvP) - 1
+                p = array.get(pvP, j)
+                if math.abs(math.log(p / close)) <= b2
+                    array.push(fp, p)
+                    array.push(fb, array.get(pvB, j))
+
+if barstate.islast and array.size(fp) >= kMin * minPts
+    f_clear()
+    table.clear(stat, 0, 0, 2, 23)
+    n = array.size(fp)
+
+    //--- work in log space so the model behaves the same at any price level
+    logs = array.new<float>()
+    for j = 0 to n - 1
+        array.push(logs, math.log(array.get(fp, j)))
+
+    rngLog = math.max(array.max(logs) - array.min(logs), 1e-6)
+
+    //--- the model searches the level count and keeps the cleanest separation
+    bestK = autoK ? kMin : kFix
+    bestSil = -1.0
+    cent = autoK ? array.new<float>(1, 0.0) : f_kmeans(logs, kFix, passes)
+    if autoK
+        for kk = kMin to math.min(kMax, int(n / minPts))
+            cTry = f_kmeans(logs, kk, passes)
+            s = f_silhouette(logs, cTry)
+            if s > bestSil
+                bestSil := s
+                bestK := kk
+                cent := cTry
+    else
+        bestSil := f_silhouette(logs, cent)
+    nK = array.size(cent)
+
+    //--- membership, extents and rejection of groups too sparse to be a level
+    cLo  = array.new<float>(nK, 0.0)
+    cHi  = array.new<float>(nK, 0.0)
+    cSum = array.new<float>(nK, 0.0)
+    cCnt = array.new<int>(nK, 0)
+    cFst = array.new<int>(nK, bar_index)
+    cid  = array.new<int>(n, -1)
+    for j = 0 to n - 1
+        v = array.get(logs, j)
+        c = f_nearest(cent, v)
+        array.set(cid, j, c)
+        if array.get(cCnt, c) == 0
+            array.set(cLo, c, v)
+            array.set(cHi, c, v)
+        array.set(cLo, c, math.min(array.get(cLo, c), v))
+        array.set(cHi, c, math.max(array.get(cHi, c), v))
+        array.set(cSum, c, array.get(cSum, c) + v)
+        array.set(cCnt, c, array.get(cCnt, c) + 1)
+        b = array.get(fb, j)
+        if b < array.get(cFst, c)
+            array.set(cFst, c, b)
+
+    //--- how tightly each group is packed, so the model can reject the loose ones
+    dens = array.new<float>(nK, 0.0)
+    dSum = 0.0
+    dN = 0
+    for c = 0 to nK - 1
+        cnt = array.get(cCnt, c)
+        if cnt >= minPts
+            ext = math.max(array.get(cHi, c) - array.get(cLo, c), 1e-6)
+            d = cnt / ext
+            array.set(dens, c, d)
+            dSum += d
+            dN += 1
+    dCut = dN > 0 ? (dSum / dN) * selPct / 100 : 0.0
+
+    keep = array.new<bool>(nK, false)
+    levels = 0
+    noise = 0
+    for c = 0 to nK - 1
+        if array.get(cCnt, c) >= minPts and array.get(dens, c) >= dCut
+            array.set(keep, c, true)
+            levels += 1
+        else
+            noise += array.get(cCnt, c)
+    for j = 0 to n - 1
+        if not array.get(keep, array.get(cid, j))
+            array.set(cid, j, -1)
+
+    //--- keep the levels nearest to price
+    pick = array.new<int>()
+    used = array.new<bool>(nK, false)
+    for s = 1 to math.min(maxZones, levels)
+        bi = -1
+        bd = 1e9
+        for c = 0 to nK - 1
+            if not array.get(used, c) and array.get(keep, c)
+                ct = math.exp(array.get(cSum, c) / array.get(cCnt, c))
+                d = math.abs(math.log(ct / close))
+                if d < bd and (maxDist == 0 or d <= math.log(1 + maxDist / 100))
+                    bd := d
+                    bi := c
+        if bi >= 0
+            array.set(used, bi, true)
+            array.push(pick, bi)
+
+    //--- raw distribution of swing points across price, the input the model sees
+    if showProf and n > 1
+        loL = array.min(logs)
+        hiL = array.max(logs)
+        span = math.max(hiL - loL, 1e-9)
+        bins = array.new<int>(profBins, 0)
+        for j = 0 to n - 1
+            bi = math.max(0, math.min(profBins - 1, int((array.get(logs, j) - loL) / span * profBins)))
+            array.set(bins, bi, array.get(bins, bi) + 1)
+        mb = 1
+        for i2 = 0 to profBins - 1
+            if array.get(bins, i2) > mb
+                mb := array.get(bins, i2)
+        for i2 = 0 to profBins - 1
+            v = array.get(bins, i2)
+            if v > 0
+                pb = math.exp(loL + span * i2 / profBins)
+                pt = math.exp(loL + span * (i2 + 1) / profBins)
+                ln = math.max(1, int(profW * v / mb))
+                pc = (pb + pt) / 2 < close ? supCol : resCol
+                array.push(mlsr_boxes, box.new(bar_index - ln, pt, bar_index, pb, bgcolor = color.new(pc, 82), border_color = color.new(pc, 100)))
+
+    //--- swing points, coloured by the level they belong to, grey where the model saw noise
+    if showDots
+        for j = 0 to n - 1
+            c = array.get(cid, j)
+            shown = c >= 0 and array.indexof(pick, c) >= 0
+            if array.size(dots) < 400 and (shown or (showNoise and c < 0))
+                dc = c < 0 ? noiseCol : (math.exp(array.get(cSum, c) / array.get(cCnt, c)) < close ? supCol : resCol)
+                array.push(dots, label.new(array.get(fb, j), array.get(fp, j), "•", style = label.style_none, textcolor = color.new(dc, c < 0 ? 35 : 0), size = dotSize))
+
+    //--- header: what the model decided on its own
+    row = 0
+    if showTable
+        shown = array.size(pick)
+        table.cell(stat, 0, 0, str.tostring(levels) + (levels == 1 ? " level" : " levels") + (shown < levels ? ", " + str.tostring(shown) + " near price" : " found"), text_color = color.gray, text_size = txtSize, bgcolor = color.new(color.gray, 90))
+        table.cell(stat, 1, 0, "fit " + str.tostring(math.round(bestSil * 100)) + "%", text_color = color.gray, text_size = txtSize, bgcolor = color.new(color.gray, 90))
+        table.cell(stat, 2, 0, str.tostring(noise) + " noise", text_color = color.gray, text_size = txtSize, bgcolor = color.new(color.gray, 90))
+        table.cell(stat, 0, 1, "Level", text_color = color.gray, text_size = txtSize)
+        table.cell(stat, 1, 1, "swings", text_color = color.gray, text_size = txtSize)
+        table.cell(stat, 2, 1, "held", text_color = color.gray, text_size = txtSize)
+        row := 2
+
+    maxCnt = 1
+    if array.size(pick) > 0
+        for s = 0 to array.size(pick) - 1
+            maxCnt := math.max(maxCnt, array.get(cCnt, array.get(pick, s)))
+
+    if array.size(pick) > 0
+        for s = 0 to array.size(pick) - 1
+            c = array.get(pick, s)
+            cnt = array.get(cCnt, c)
+            ctr = math.exp(array.get(cSum, c) / cnt)
+            top = math.exp(array.get(cHi, c))
+            bot = math.exp(array.get(cLo, c))
+            half = math.max((top - bot) / 2, ctr * minWIn / 100)
+            half := math.min(half, ctr * maxWIn / 100)
+            half := math.min(half, ctr * (math.exp(rngLog * maxWRng / 200) - 1))
+            top := ctr + half
+            bot := ctr - half
+            isSup = ctr < close
+            col = isSup ? supCol : resCol
+            fill = math.round(92 - 18 * cnt / maxCnt)
+            lft = array.get(cFst, c)
+            rgt = bar_index + extBars
+            if softEdge
+                array.push(mlsr_boxes, box.new(lft, ctr + half * 1.3, rgt, ctr - half * 1.3, bgcolor = color.new(col, math.min(96, fill + 5)), border_color = color.new(col, 100)))
+                array.push(mlsr_boxes, box.new(lft, top, rgt, bot, bgcolor = color.new(col, fill), border_color = color.new(col, 100)))
+                array.push(mlsr_boxes, box.new(lft, ctr + half * 0.45, rgt, ctr - half * 0.45, bgcolor = color.new(col, math.max(62, fill - 16)), border_color = color.new(col, 100)))
             else
-                amean := new_amean
-                bmean := new_bmean
-                cmean := new_cmean
-            iter += 1
-            
-    [amean, bmean, cmean]
+                array.push(mlsr_boxes, box.new(lft, top, rgt, bot, bgcolor = color.new(col, fill), border_color = color.new(col, 45), border_width = 1))
 
-[up, middle, down] = k_means_optimize_centroids(close, len, ta.highest(len), math.avg(ta.highest(len), ta.lowest(len)), ta.lowest(len))
+            if showMid
+                array.push(mids, line.new(lft, ctr, rgt, ctr, color = color.new(col, 25), style = line.style_dotted, width = 1))
 
-type store
-    line lvl
-    float src
+            array.push(tags, label.new(rgt, ctr, str.tostring(math.round_to_mintick(ctr)) + "  " + str.tostring(cnt), style = label.style_label_left, color = color.new(col, 15), textcolor = color.white, size = txtSize))
 
-var array<store> aR = array.new<store>()
-var array<store> aM = array.new<store>()
-var array<store> aS = array.new<store>()
+            if showTable and showStats and row <= 23
+                [visits, held] = f_holdRate(bot, top)
+                table.cell(stat, 0, row, str.tostring(math.round_to_mintick(ctr)), text_color = col, text_size = txtSize)
+                table.cell(stat, 1, row, str.tostring(cnt), text_color = col, text_size = txtSize)
+                table.cell(stat, 2, row, visits > 0 ? str.tostring(held) + "/" + str.tostring(visits) : "-", text_color = col, text_size = txtSize)
+                row += 1
 
-up_cluster = 0
-middle_cluster = 0
-down_cluster = 0
+            if low <= top and high >= bot and not (low[1] <= top and high[1] >= bot)
+                touched := true
+            if (isSup and close < bot and close[1] >= bot) or (not isSup and close > top and close[1] <= top)
+                brokeZ := true
 
-// FIX: Changed ta.atR to ta.atr
-volatility = ta.atr(14)
-anti_cluster_mult = 1
-
-// Extracted the three byte-identical aR/aM/aS cluster-check blocks into one helper.
-// The `arr.size() > 0` guard is kept INSIDE the function: Pine auto-detects loop
-// direction, so `for i = 0 to arr.size()-1` on an empty array would count down and
-// read arr.get(0) out of bounds. Arrays pass by reference (read-only here); flags
-// only accumulate to 1, so combining with math.max reproduces the original OR exactly.
-check_cluster(array<store> arr, float up, float middle, float down, float vol, float mult) =>
-    int uc = 0
-    int mc = 0
-    int dc = 0
-    if arr.size() > 0
-        for i = 0 to arr.size() - 1 by 1
-            price = arr.get(i).src
-            if up > price - vol * mult and up < price + vol * mult
-                uc := 1
-                break
-            if middle > price - vol * mult and middle < price + vol * mult
-                mc := 1
-                break
-            if down > price - vol * mult and down < price + vol * mult
-                dc := 1
-                break
-    [uc, mc, dc]
-
-[uc1, mc1, dc1] = check_cluster(aR, up, middle, down, volatility, anti_cluster_mult)
-[uc2, mc2, dc2] = check_cluster(aM, up, middle, down, volatility, anti_cluster_mult)
-[uc3, mc3, dc3] = check_cluster(aS, up, middle, down, volatility, anti_cluster_mult)
-up_cluster     := math.max(uc1, uc2, uc3)
-middle_cluster := math.max(mc1, mc2, mc3)
-down_cluster   := math.max(dc1, dc2, dc3)
-
-if up == up[srConfirmLen] and up_cluster != 1 and shw1
-    aR.push(store.new(line.new(bar_index, up, bar_index + 1, up, color = chart.fg_color, extend = extend.right, width = 3), up))
-
-if middle == middle[srConfirmLen] and middle_cluster != 1 and shw1
-    aM.push(store.new(line.new(bar_index, middle, bar_index + 1, middle, color = chart.fg_color, extend = extend.right, width = 3), middle))
-
-if down == down[srConfirmLen] and down_cluster != 1 and shw1
-    aS.push(store.new(line.new(bar_index, down, bar_index + 1, down, color = chart.fg_color, extend = extend.right, width = 3), down))
-
-// Extracted the three byte-identical aR/aM/aS trailing-level maintenance blocks
-// into one helper. Arrays pass by reference so shift/delete/set_* mutate the
-// caller's array; the three var arrays keep independent persistent state.
-maintain_levels(array<store> arr, int clearN, bool colOn, color colUp, color colDn) =>
-    if arr.size() > 0
-        qt = arr.size()
-        for ln = qt - 1 to 0 by 1
-            if ln < arr.size()
-                cL = arr.get(ln)
-                yL = cL.lvl.get_x1()
-                vert = cL.lvl.get_y1()
-
-                if bar_index - yL > clearN
-                    arr.shift().lvl.delete()
-                else
-                    cL.lvl.set_x2(bar_index + 1)
-
-                if close > vert and colOn
-                    cL.lvl.set_color(colUp)
-                else if colOn
-                    cL.lvl.set_color(colDn)
-
-        while arr.size() > 500
-            arr.shift().lvl.delete()
-
-maintain_levels(aR, clear, collvls, green, red)
-maintain_levels(aM, clear, collvls, green, red)
-maintain_levels(aS, clear, collvls, green, red)
-
-u = plot(up, 'Upper', color.new(green, 50), display = shw ? display.all : display.none)
-m = plot(middle, 'Middle', color.new(color.blue, 50), display = shw ? display.all : display.none)
-l = plot(down, 'Lower', color.new(red, 50), display = shw ? display.all : display.none)
-
-fill(u, m, up, middle, color.new(green, 90), color.new(color.blue, 90), display = shw ? display.all : display.none)
-fill(l, m, middle, down, color.new(color.blue, 90), color.new(red, 90), display = shw ? display.all : display.none)
-
+if barstate.islast and barstate.isconfirmed
+    if touched
+        alert("Price entered a clustered support or resistance level", alert.freq_once_per_bar_close)
+    if brokeZ
+        alert("Price closed through a clustered support or resistance level", alert.freq_once_per_bar_close)
 
 //==============================================================================
 //        AUTO PATTERN DETECTOR TARGETS  (© MarkitTick)
