@@ -2033,7 +2033,7 @@ table.cell(dash, 1, 8, "⏳ " + str.tostring(dash_piv_total) + " Pivots", bgcolo
 // Merged into the single indicator. Stand-alone @version/indicator() header
 // removed (one declaration per script). No identifier collisions with existing
 // engines (verified). NOTE: this engine draws its OWN order blocks + BOS +
-// sessions + weekly levels + dashboard, overlapping the BigBeluga Order Block
+// weekly levels + dashboard, overlapping the BigBeluga Order Block
 // Engine already present above.
 //==============================================================================
 
@@ -2058,7 +2058,6 @@ color DASH_TEXT_MUTED    = #6B7280
 string G_DASH            = "Analytics Panel"
 string G_MS              = "Market Structure"
 string G_OB              = "Institutional Blocks"
-string G_SESS            = "Trading Sessions"
 string G_WEEKLY          = "Weekly Levels"
 string G_SIGNALS         = "Buy / Sell Signals"
 
@@ -2076,24 +2075,6 @@ string cfgDisplayMode    = input.string("Historical", "View Mode", options = ["H
 int    cfgMaxBlocks      = input.int(10, "Maximum Active Blocks", minval = 1, maxval = 100, group = G_OB)
 bool   cfgKeepMitigated  = input.bool(false, "Extend Mitigated Blocks", group = G_OB)
 bool   cfgFilterOverlap  = input.bool(true, "Filter Overlapping Blocks", group = G_OB)
-
-// Session Settings
-bool   cfgShowSessions   = input.bool(true, "Highlight Trading Sessions", group = G_SESS)
-bool   cfgLondonActive   = input.bool(false, "London Session", group = G_SESS)
-string cfgLondonTime     = input.session("0800-1700:1234567", "London Schedule", group = G_SESS)
-color  cfgLondonColor    = input.color(#2563EB, "London Color", group = G_SESS, inline = "LON")
-
-bool   cfgNYActive       = input.bool(false, "New York Session", group = G_SESS)
-string cfgNYTime         = input.session("1300-2200:1234567", "New York Schedule", group = G_SESS)
-color  cfgNYColor        = input.color(#EA580C, "NY Color", group = G_SESS, inline = "NY")
-
-bool   cfgTokyoActive    = input.bool(false, "Tokyo Session", group = G_SESS)
-string cfgTokyoTime      = input.session("0000-0900:1234567", "Tokyo Schedule", group = G_SESS)
-color  cfgTokyoColor     = input.color(#E11D48, "Tokyo Color", group = G_SESS, inline = "TYO")
-
-bool   cfgSydneyActive   = input.bool(false, "Sydney Session", group = G_SESS)
-string cfgSydneyTime     = input.session("2100-0600:1234567", "Sydney Schedule", group = G_SESS)
-color  cfgSydneyColor    = input.color(#CA8A04, "Sydney Color", group = G_SESS, inline = "SYD")
 
 // Weekly High/Low Settings
 bool   cfgShowWeekly     = input.bool(true, "Show Prev Weekly High / Low", group = G_WEEKLY)
@@ -2137,30 +2118,6 @@ getSize(string sizeStr) =>
         "Normal" => size.normal
         "Large"  => size.large
         => size.small
-
-renderSessionRange(bool isEnabled, string sessionPattern, color sessionColor, string sessionLabel) =>
-    var box   rangeBox   = na
-    var label rangeLabel = na
-    var float highPrice  = na
-    var float lowPrice   = na
-
-    bool inSessionNow = not na(time(timeframe.period, sessionPattern))
-    bool sessionStarted = inSessionNow and not inSessionNow[1]
-
-    if isEnabled and inSessionNow
-        if sessionStarted
-            highPrice  := high
-            lowPrice   := low
-            rangeBox   := box.new(bar_index, highPrice, bar_index, lowPrice, border_color = sessionColor, border_style = line.style_dotted, bgcolor = color.new(sessionColor, 94))
-            rangeLabel := label.new(bar_index, highPrice, sessionLabel, style = label.style_none, textcolor = sessionColor, size = size.small, textalign = text.align_center)
-        else
-            highPrice := math.max(highPrice, high)
-            lowPrice  := math.min(lowPrice, low)
-            rangeBox.set_top(highPrice)
-            rangeBox.set_bottom(lowPrice)
-            rangeBox.set_right(bar_index)
-            rangeLabel.set_xy(math.round(math.avg(rangeBox.get_left(), bar_index)), highPrice)
-    float(na)
 
 //---------------------------------------------------------------------------------------------------------------------
 // Core Indicator Logic
@@ -2209,13 +2166,6 @@ if not na(highPivot)
 if not na(lowPivot)
     recentLowPivot := lowPivot
     recentLowIndex := bar_index - cfgPivotLength
-
-// Draw Sessions
-if cfgShowSessions
-    renderSessionRange(cfgLondonActive, cfgLondonTime, cfgLondonColor, "London")
-    renderSessionRange(cfgNYActive,     cfgNYTime,     cfgNYColor,     "New York")
-    renderSessionRange(cfgTokyoActive,  cfgTokyoTime,  cfgTokyoColor,  "Tokyo")
-    renderSessionRange(cfgSydneyActive, cfgSydneyTime, cfgSydneyColor, "Sydney")
 
 // Market Structure Break Conditions
 bool bullishBreak = close > recentHighPivot and close[1] <= recentHighPivot and zScore > cfgBreakThreshold
