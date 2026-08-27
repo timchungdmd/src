@@ -22,74 +22,6 @@ zigzag_color = input.color(#c8ff0004, 'Color', inline = 'zigzag', group = 'Zigza
 retrepaint = input.bool(true, 'Repaint', inline = 'zigzag', group = 'Zigzag Settings') and show_zigzag
 
 //==============================================================================
-//                     FIBONACCI RETRACEMENT SETTINGS
-//==============================================================================
-fib = array.new_float(0)
-fib_col = array.new_color(0)
-
-fib_a_lvl = input(0, '', inline = 'ret_inline1', group = 'Fibonacci Retracement Levels')
-fib_a_col = input(#ffffff, '', inline = 'ret_inline1', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline1', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_a_lvl)
-    array.push(fib_col, fib_a_col)
-
-fib_b_lvl = input(0.236, '', inline = 'ret_inline2', group = 'Fibonacci Retracement Levels')
-fib_b_col = input(#ffffff, '', inline = 'ret_inline2', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline2', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_b_lvl)
-    array.push(fib_col, fib_b_col)
-
-fib_c_lvl = input(0.382, '', inline = 'ret_inline3', group = 'Fibonacci Retracement Levels')
-fib_c_col = input(#ffffff, '', inline = 'ret_inline3', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline3', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_c_lvl)
-    array.push(fib_col, fib_c_col)
-
-fib_d_lvl = input(0.5, '', inline = 'ret_inline4', group = 'Fibonacci Retracement Levels')
-fib_d_col = input(#ffffff, '', inline = 'ret_inline4', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline4', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_d_lvl)
-    array.push(fib_col, fib_d_col)
-
-fib_e_lvl = input(0.618, '', inline = 'ret_inline5', group = 'Fibonacci Retracement Levels')
-fib_e_col = input(#ffffff, '', inline = 'ret_inline5', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline5', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_e_lvl)
-    array.push(fib_col, fib_e_col)
-
-fib_f_lvl = input(0.786, '', inline = 'ret_inline6', group = 'Fibonacci Retracement Levels')
-fib_f_col = input(#ffffff, '', inline = 'ret_inline6', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline6', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_f_lvl)
-    array.push(fib_col, fib_f_col)
-
-fib_g_lvl = input(1, '', inline = 'ret_inline7', group = 'Fibonacci Retracement Levels')
-fib_g_col = input(#ffffff, '', inline = 'ret_inline7', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline7', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_g_lvl)
-    array.push(fib_col, fib_g_col)
-
-fib_h_lvl = input(1.272, '', inline = 'ret_inline8', group = 'Fibonacci Retracement Levels')
-fib_h_col = input(#ffffff, '', inline = 'ret_inline8', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline8', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_h_lvl)
-    array.push(fib_col, fib_h_col)
-
-fib_i_lvl = input(1.414, '', inline = 'ret_inline9', group = 'Fibonacci Retracement Levels')
-fib_i_col = input(#ffffff, '', inline = 'ret_inline9', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline9', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_i_lvl)
-    array.push(fib_col, fib_i_col)
-
-fib_j_lvl = input(1.618, '', inline = 'ret_inline10', group = 'Fibonacci Retracement Levels')
-fib_j_col = input(#ffffff, '', inline = 'ret_inline10', group = 'Fibonacci Retracement Levels')
-if input(true, '', inline = 'ret_inline10', group = 'Fibonacci Retracement Levels')
-    array.push(fib, fib_j_lvl)
-    array.push(fib_col, fib_j_col)
-
-ret_bars = input.int(60, 'Retracement Bars', group = 'Fibonacci Retracement Levels', tooltip = 'the lines will be extended "Bars" + "Right Lookback" bars to the right')
-
-//==============================================================================
 //                     SHARED ZIGZAG LOGIC
 //==============================================================================
 new_pivot_high = not na(ta.pivothigh(high, lbL, lbR))
@@ -140,29 +72,281 @@ if retrepaint
     repainted_zigzag := polyline.new(points, xloc = xloc.bar_index, line_style = line.style_dotted, line_color = zigzag_color)
 
 //==============================================================================
-//                     FIBONACCI RETRACEMENT CALCULATION
+//                     AUTO FIB AI [D3R]
 //==============================================================================
-var array<float> fib_levels = array.new<float>()
+// COLORS
+C_BULL    = color.new(#00f0ff, 0)
+C_BEAR    = color.new(#ff00aa, 0)
+C_GREEN   = color.new(#00c896, 0)
+C_RED     = color.new(#ff4466, 0)
+C_AMBER   = color.new(#ffb700, 0)
+C_NEUTRAL = color.new(#64748b, 0)
+C_BG      = color.new(#131722, 5)
+C_TXT     = color.new(#f8fafc, 0)
+C_DIM     = color.new(#94a3b8, 0)
+C_BORD    = color.new(#334155, 0)
 
-if bool(ta.change(bar_index))
-    fib_levels.clear()
-    for i = 0 to fib.size() - 1 by 1
-        fib_levels.push(second_last_pivot.price + array.get(fib, i) * (last_pivot.price - second_last_pivot.price))
 
-var array<label> fib_labels = array.new<label>()
-var array<line> fib_lines = array.new<line>()
+// INPUTS
+GRP_DET = "📐 Swing Detection"
+GRP_TCH = "🎯 Level Grading"
+GRP_VIS = "🎨 Visualization"
+GRP_HUD = "🖥️ Dashboard"
 
-if new_pivot
-    if fib_lines.size() > 0
-        for j = 0 to fib_lines.size() - 1 by 1
-            line.delete(fib_lines.get(j))
-            label.delete(fib_labels.get(j))
-    fib_lines.clear()
-    fib_labels.clear()
+pivot_leg   = input.int(8, "Pivot Leg (bars each side)", minval=3, maxval=30, group=GRP_DET,
+              tooltip="Bars required on each side to confirm a swing pivot. Larger = bigger, more significant swings.")
+min_swing_atr = input.float(3.0, "Min Swing Size (×ATR)", minval=0.5, maxval=20.0, step=0.5, group=GRP_DET,
+              tooltip="Swings smaller than this are ignored — tiny swings produce meaningless fib structures.")
 
-    for i = 0 to array.size(fib) - 1 by 1
-        fib_lines.push(line.new(second_last_pivot.index, fib_levels.get(i), bar_index + lbR + ret_bars, fib_levels.get(i), xloc.bar_index, color = fib_col.get(i), extend = extend.none))
-        fib_labels.push(label.new(bar_index + lbR + ret_bars, fib_levels.get(i), str.tostring(fib.get(i)), xloc.bar_index, yloc.price, #00000000, label.style_label_left, fib_col.get(i), size.small, text.align_center))
+touch_tol   = input.float(0.2, "Touch Tolerance (×ATR)", minval=0.05, maxval=1.0, step=0.05, group=GRP_TCH)
+break_buf   = input.float(0.3, "Break Buffer (×ATR)", minval=0.05, maxval=1.5, step=0.05, group=GRP_TCH,
+              tooltip="Close must clear a level by this margin to grade the touch as a break.")
+bounce_atr  = input.float(1.0, "Bounce Distance (×ATR)", minval=0.3, maxval=5.0, step=0.1, group=GRP_TCH,
+              tooltip="Price must move away from the level at least this far, without breaking, to grade as a bounce.")
+outcome_bars = input.int(10, "Outcome Window (bars)", minval=3, maxval=50, group=GRP_TCH)
+ext_window  = input.int(40, "Extension Window (bars)", minval=10, maxval=200, group=GRP_TCH,
+              tooltip="Bars after a swing-extreme break within which extension targets must be reached to count as hit.")
+
+show_ext    = input.bool(true, "Show Extension Targets", group=GRP_VIS)
+show_stats  = input.bool(true, "Per-Level Stat Labels", group=GRP_VIS)
+
+show_hud = input.bool(true, "Show Dashboard", group=GRP_HUD)
+hud_pos  = input.string("Top Right", "Position",
+           options=["Top Right","Top Left","Bottom Right","Bottom Left"], group=GRP_HUD)
+
+
+atr_raw = ta.atr(14)
+fib_ph = ta.pivothigh(high, pivot_leg, pivot_leg)
+fib_pl = ta.pivotlow(low,  pivot_leg, pivot_leg)
+
+
+// FIB LEVELS
+var float[] FIB_R = array.from(0.236, 0.382, 0.5, 0.618, 0.786)
+var float[] FIB_E = array.from(1.272, 1.618)
+
+var int[] lvl_touches = array.new<int>(5, 0)
+var int[] lvl_bounces = array.new<int>(5, 0)
+
+var int ext_attempts = 0
+var int ext_hit_1    = 0   // reached 1.272
+var int ext_hit_2    = 0   // reached 1.618
+
+// ACTIVE FIB STRUCTURE
+var bool  fib_active  = false
+var bool  fib_is_up   = false     // up-swing: levels retrace DOWN from high
+var float fib_hi      = na
+var float fib_lo      = na
+var int   fib_hi_bar  = na
+var int   fib_lo_bar  = na
+
+// Most recent confirmed pivots
+var float last_ph = na
+var int   last_ph_bar = na
+var float last_pl = na
+var int   last_pl_bar = na
+
+// Pending touch (single slot)
+var int   pend_bar   = na
+var int   pend_lvl   = na
+var float pend_price = na
+
+// Extension pending
+var int   extp_bar = na
+var float extp_t1  = na
+var float extp_t2  = na
+var bool  extp_hit1 = false
+
+// Drawing storage
+var line[]  fib_lines  = array.new<line>()
+var label[] fib_labels = array.new<label>()
+
+f_lvl_price(int i) =>
+    float r = array.get(FIB_R, i)
+    fib_is_up ? fib_hi - (fib_hi - fib_lo) * r : fib_lo + (fib_hi - fib_lo) * r
+
+f_ext_price(int i) =>
+    float r = array.get(FIB_E, i)
+    fib_is_up ? fib_hi + (fib_hi - fib_lo) * (r - 1.0) : fib_lo - (fib_hi - fib_lo) * (r - 1.0)
+
+f_clear_fib() =>
+    if array.size(fib_lines) > 0
+        for i = 0 to array.size(fib_lines) - 1
+            line.delete(array.get(fib_lines, i))
+        array.clear(fib_lines)
+    if array.size(fib_labels) > 0
+        for i = 0 to array.size(fib_labels) - 1
+            label.delete(array.get(fib_labels, i))
+        array.clear(fib_labels)
+
+f_draw_fib() =>
+    f_clear_fib()
+    int x1 = math.min(fib_hi_bar, fib_lo_bar)
+    int x2 = bar_index + 10
+    array.push(fib_lines, line.new(x1, fib_is_up ? fib_hi : fib_lo, x2, fib_is_up ? fib_hi : fib_lo,
+               color=color.new(fib_is_up ? C_BULL : C_BEAR, 30), width=2))
+    array.push(fib_lines, line.new(x1, fib_is_up ? fib_lo : fib_hi, x2, fib_is_up ? fib_lo : fib_hi,
+               color=color.new(C_NEUTRAL, 55), width=1))
+    for i = 0 to 4
+        float lp = f_lvl_price(i)
+        color lc = i == 3 ? C_AMBER : C_DIM
+        array.push(fib_lines, line.new(x1, lp, x2, lp,
+                   color=color.new(lc, i == 3 ? 20 : 40), width=1,
+                   style=line.style_dotted))
+        if show_stats
+            int t = array.get(lvl_touches, i)
+            int b = array.get(lvl_bounces, i)
+            string s = str.tostring(array.get(FIB_R, i), "#.###")
+            if t > 0
+                s := s + "  |  " + str.tostring(math.round(float(b) / float(t) * 100.0)) + "% bounced (n=" + str.tostring(t) + ")"
+            else
+                s := s + "  |  no touches yet"
+            array.push(fib_labels, label.new(x2, lp, s,
+                       style=label.style_label_left,
+                       color=color.new(#000000, 100),
+                       textcolor=lc, size=10))
+    if show_ext
+        for i = 0 to 1
+            float ep = f_ext_price(i)
+            array.push(fib_lines, line.new(x1, ep, x2, ep,
+                       color=color.new(C_GREEN, 60), width=1, style=line.style_dashed))
+            string es = str.tostring(array.get(FIB_E, i), "#.###")
+            if ext_attempts > 0
+                int hits = i == 0 ? ext_hit_1 : ext_hit_2
+                es := es + "  |  hit " + str.tostring(math.round(float(hits) / float(ext_attempts) * 100.0)) + "% (n=" + str.tostring(ext_attempts) + ")"
+            array.push(fib_labels, label.new(x2, ep, es,
+                       style=label.style_label_left,
+                       color=color.new(#000000, 100),
+                       textcolor=C_GREEN, size=10))
+    true
+
+
+if barstate.isconfirmed
+
+    // ── COLLECT PIVOTS / REBUILD FIB
+    bool rebuilt = false
+    if not na(fib_ph)
+        last_ph     := fib_ph
+        last_ph_bar := bar_index - pivot_leg
+        rebuilt := true
+    if not na(fib_pl)
+        last_pl     := fib_pl
+        last_pl_bar := bar_index - pivot_leg
+        rebuilt := true
+
+    if rebuilt and not na(last_ph) and not na(last_pl)
+        if math.abs(last_ph - last_pl) >= min_swing_atr * atr_raw
+            fib_active := true
+            fib_is_up  := last_ph_bar > last_pl_bar
+            fib_hi     := last_ph
+            fib_lo     := last_pl
+            fib_hi_bar := last_ph_bar
+            fib_lo_bar := last_pl_bar
+            pend_bar   := na
+            extp_bar   := na
+            extp_hit1  := false
+            f_draw_fib()
+
+    if fib_active and not na(pend_bar)
+        float lv = pend_price
+        bool is_from_above = fib_is_up    // in an up-swing retracement, price comes down onto levels
+        bool broke = is_from_above ? close < lv - break_buf * atr_raw : close > lv + break_buf * atr_raw
+        bool bounced = is_from_above ? (close - lv) >= bounce_atr * atr_raw : (lv - close) >= bounce_atr * atr_raw
+        bool timed_out = (bar_index - pend_bar) >= outcome_bars
+        if broke or bounced or timed_out
+            array.set(lvl_touches, pend_lvl, array.get(lvl_touches, pend_lvl) + 1)
+            if bounced
+                array.set(lvl_bounces, pend_lvl, array.get(lvl_bounces, pend_lvl) + 1)
+            pend_bar := na
+            f_draw_fib()
+
+    if fib_active and na(pend_bar)
+        int   best_i = na
+        float best_d = touch_tol * atr_raw
+        for i = 0 to 4
+            float lp = f_lvl_price(i)
+            float d = fib_is_up ? math.abs(low - lp) : math.abs(high - lp)
+            bool correct_side = fib_is_up ? close > lp : close < lp
+            if d <= best_d and correct_side
+                best_d := d
+                best_i := i
+        if not na(best_i)
+            pend_bar   := bar_index
+            pend_lvl   := best_i
+            pend_price := f_lvl_price(best_i)
+
+    // ── EXTENSION TARGET TRACKING
+    if fib_active and na(extp_bar)
+        bool broke_extreme = fib_is_up ? close > fib_hi + break_buf * atr_raw : close < fib_lo - break_buf * atr_raw
+        if broke_extreme
+            extp_bar  := bar_index
+            extp_t1   := f_ext_price(0)
+            extp_t2   := f_ext_price(1)
+            extp_hit1 := false
+            ext_attempts += 1
+
+    if not na(extp_bar)
+        bool hit1 = fib_is_up ? high >= extp_t1 : low <= extp_t1
+        bool hit2 = fib_is_up ? high >= extp_t2 : low <= extp_t2
+        if hit1 and not extp_hit1
+            ext_hit_1 += 1
+            extp_hit1 := true
+        if hit2
+            ext_hit_2 += 1
+            extp_bar := na
+            f_draw_fib()
+        else if (bar_index - extp_bar) >= ext_window
+            extp_bar := na
+            f_draw_fib()
+
+
+// DASHBOARD
+f_hud_pos(string s) =>
+    switch s
+        "Top Right"    => position.top_right
+        "Top Left"     => position.top_left
+        "Bottom Right" => position.bottom_right
+        =>                position.bottom_left
+
+var table hud = table.new(f_hud_pos(hud_pos), 2, 10,
+                           bgcolor=C_BG, border_color=C_BORD,
+                           border_width=1, frame_color=C_BORD, frame_width=2)
+
+if show_hud and barstate.islast
+    table.cell(hud, 0, 0, "AUTO FIB AI [D3R]", text_color=C_TXT,
+               bgcolor=color.new(#1e293b, 0), text_size=11, text_halign=text.align_center)
+    table.merge_cells(hud, 0, 0, 1, 0)
+
+    table.cell(hud, 0, 1, "Swing", text_color=C_DIM, bgcolor=color.new(#1e293b, 40), text_size=11)
+    table.cell(hud, 1, 1, not fib_active ? "—" : fib_is_up ? "▲ UP" : "▼ DOWN",
+               text_color=not fib_active ? C_DIM : fib_is_up ? C_BULL : C_BEAR,
+               bgcolor=color.new(#1e293b, 40), text_size=11, text_halign=text.align_center)
+
+    for i = 0 to 4
+        int t = array.get(lvl_touches, i)
+        int b = array.get(lvl_bounces, i)
+        string rowlab = str.tostring(array.get(FIB_R, i), "#.###")
+        string rowval = t > 0 ? str.tostring(math.round(float(b) / float(t) * 100.0)) + "%  (n=" + str.tostring(t) + ")" : "—"
+        color rc = t == 0 ? C_DIM : float(b) / float(t) >= 0.5 ? C_GREEN : C_RED
+        table.cell(hud, 0, 2 + i, rowlab, text_color=i == 3 ? C_AMBER : C_DIM,
+                   bgcolor=color.new(i % 2 == 0 ? #1e293b : #0f172a, 40), text_size=11)
+        table.cell(hud, 1, 2 + i, rowval, text_color=rc,
+                   bgcolor=color.new(i % 2 == 0 ? #1e293b : #0f172a, 40),
+                   text_size=11, text_halign=text.align_center)
+
+    string e1 = ext_attempts > 0 ? str.tostring(math.round(float(ext_hit_1) / float(ext_attempts) * 100.0)) + "% / " + str.tostring(math.round(float(ext_hit_2) / float(ext_attempts) * 100.0)) + "%" : "—"
+    table.cell(hud, 0, 7, "Ext 1.272/1.618", text_color=C_DIM, bgcolor=color.new(#1e293b, 40), text_size=11)
+    table.cell(hud, 1, 7, e1 + (ext_attempts > 0 ? "  (n=" + str.tostring(ext_attempts) + ")" : ""),
+               text_color=ext_attempts > 0 ? C_GREEN : C_DIM,
+               bgcolor=color.new(#1e293b, 40), text_size=11, text_halign=text.align_center)
+
+
+// ALERTS
+bool touch_now = fib_active and not na(pend_bar) and pend_bar == bar_index
+var bool extreme_broken_prev = false
+bool extreme_broken_now = not na(extp_bar) and extp_bar == bar_index
+
+alertcondition(touch_now,          "Fib Level Touch",    "D3R Auto Fib: price touched a fibonacci level — check its measured bounce rate")
+alertcondition(extreme_broken_now, "Swing Extreme Break","D3R Auto Fib: swing extreme broken — extension targets active")
 
 
 //////////////Liquidity Sentiment Profile///////////
