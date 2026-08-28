@@ -2391,13 +2391,14 @@ getZigZagLineStyle() =>
 // DeltaFlow overlay (per-bin buy/sell breakdown). All off by default, so the
 // default look and drawing/compile cost are unchanged unless a toggle is on.
 dfVolumeBars   = input.bool(false, "Buy/Sell Split Bars", group = "DeltaFlow Overlay")
-dfDeltaBar     = input.bool(false, "Delta % Bar", group = "DeltaFlow Overlay")
+dfDeltaPanel   = input.bool(false, "Delta % Side Panel", group = "DeltaFlow Overlay")
 dfDeltaHeatMap = input.bool(false, "Delta Heat Map", group = "DeltaFlow Overlay")
 dfBullColor    = input.color(color.teal, "Buy / Sell", inline = "dfcol", group = "DeltaFlow Overlay")
 dfBearColor    = input.color(color.rgb(230, 150, 30), "", inline = "dfcol", group = "DeltaFlow Overlay")
+dfPanelWidth   = input.int(8, "Δ Panel Width (bars)", minval = 2, group = "DeltaFlow Overlay")
 
 // Per-bin renderer: the main volume box plus the optional DeltaFlow visuals
-// (delta heat band, buy/sell split bars, delta % bar). Returns every box it
+// (delta heat band, buy/sell split bars, Δ% side panel). Returns every box it
 // creates so the caller can track them (real-time) or let them persist (history).
 f_draw_bin(int prevX, int lastX, float binLow, float binHigh, float ratio, int width, float binBuy, float binSell, float binVol, float maxVol, color mainCol) =>
     array<box> made = array.new<box>()
@@ -2427,13 +2428,11 @@ f_draw_bin(int prevX, int lastX, float binLow, float binHigh, float ratio, int w
              border_color = chart.bg_color, border_width = 1,
              text = str.tostring(binSell / maxVol * 100, format.percent), text_halign = text.align_left, text_size = size.tiny))
 
-    // Delta % bar: a horizontal bar (like the split bars) sized by |delta %|,
-    // colored by delta sign, extending right from the swing anchor.
-    if dfDeltaBar
-        int deltaW = int((math.abs(binDeltaPct) / 100) * ((lastX - prevX) / 2))
-        made.push(box.new(prevX, binHigh, prevX + deltaW, binLow, bgcolor = deltaCol,
-             border_color = chart.bg_color, border_width = 1,
-             text = "Δ " + str.tostring(binDeltaPct, format.percent), text_halign = text.align_left, text_size = size.tiny))
+    // Δ% side panel to the right of the swing leg
+    if dfDeltaPanel
+        made.push(box.new(lastX, binHigh, lastX + dfPanelWidth, binLow,
+             border_color = chart.bg_color, border_width = 1, bgcolor = color.new(deltaCol, 80),
+             text = "Δ " + str.tostring(binDeltaPct, format.percent), text_color = deltaCol, text_size = size.tiny))
 
     made
 
@@ -2636,26 +2635,13 @@ if barstate.islast
 // (price moved away), a break (price closed through), or a timeout. Bounce counts
 // are cumulative across swings, shown per level. Off by default (no cost unless on).
 sfShow        = input.bool(false, "Swing Fib + Bounce Count", group = "Swing Fib")
-sfExtShow     = input.bool(true,  "Show Extension Targets", group = "Swing Fib")
-sfColor       = input.color(color.aqua, "Level Color", inline = "sfcol", group = "Swing Fib")
-sfExtColor    = input.color(color.orange, "Ext", inline = "sfcol", group = "Swing Fib")
-sfFontSize    = input.string("Small", "Font Size", options = ["Tiny", "Small", "Normal", "Large"], group = "Swing Fib")
-sfLineWidth   = input.int(1, "Line Width", minval = 1, maxval = 5, group = "Swing Fib")
+sfColor       = input.color(color.aqua, "Level Color", group = "Swing Fib")
 sfTouchTol    = input.float(0.2, "Touch Tolerance (×ATR)",  minval = 0.05, maxval = 1.0, step = 0.05, group = "Swing Fib")
 sfBreakBuf    = input.float(0.3, "Break Buffer (×ATR)",     minval = 0.05, maxval = 1.5, step = 0.05, group = "Swing Fib")
 sfBounceAtr   = input.float(1.0, "Bounce Distance (×ATR)",  minval = 0.3,  maxval = 5.0, step = 0.1,  group = "Swing Fib")
 sfOutcomeBars = input.int(10, "Outcome Window (bars)", minval = 3, maxval = 50, group = "Swing Fib")
-sfExtWindow   = input.int(40, "Extension Window (bars)", minval = 10, maxval = 200, group = "Swing Fib")
-
-sfFont = switch sfFontSize
-    "Tiny"   => size.tiny
-    "Small"  => size.small
-    "Normal" => size.normal
-    "Large"  => size.large
-    => size.small
 
 var float[] SF_R          = array.from(0.236, 0.382, 0.5, 0.618, 0.786)
-var float[] SF_E          = array.from(1.272, 1.618)
 var int[]   sf_touches    = array.new<int>(5, 0)
 var int[]   sf_bounces    = array.new<int>(5, 0)
 var int     sf_pend_bar   = na
@@ -2670,22 +2656,10 @@ var int     sf_hi_bar = na
 var int     sf_lo_bar = na
 var line[]  sf_lines  = array.new<line>()
 var label[] sf_labels = array.new<label>()
-// Extension-target hit tracking (mirrors the AUTO FIB AI engine)
-var int   sf_ext_attempts = 0
-var int   sf_ext_hit1 = 0
-var int   sf_ext_hit2 = 0
-var int   sf_extp_bar = na
-var float sf_extp_t1  = na
-var float sf_extp_t2  = na
-var bool  sf_extp_hit1 = false
 
 sf_lvl_price(int i) =>
     float r = array.get(SF_R, i)
     sf_is_up ? sf_hi - (sf_hi - sf_lo) * r : sf_lo + (sf_hi - sf_lo) * r
-
-sf_ext_price(int i) =>
-    float r = array.get(SF_E, i)
-    sf_is_up ? sf_hi + (sf_hi - sf_lo) * (r - 1.0) : sf_lo - (sf_hi - sf_lo) * (r - 1.0)
 
 sf_draw() =>
     for l in sf_lines
@@ -2698,19 +2672,11 @@ sf_draw() =>
     int x2 = bar_index + 10
     for i = 0 to 4
         float lp = sf_lvl_price(i)
-        sf_lines.push(line.new(x1, lp, x2, lp, color = color.new(sfColor, 20), style = line.style_dotted, width = sfLineWidth))
+        sf_lines.push(line.new(x1, lp, x2, lp, color = color.new(sfColor, 20), style = line.style_dotted))
         int t = array.get(sf_touches, i)
         int b = array.get(sf_bounces, i)
         string s = str.tostring(array.get(SF_R, i), "#.###") + (t > 0 ? "  |  " + str.tostring(math.round(b / float(t) * 100)) + "% bounced (n=" + str.tostring(t) + ")" : "  |  no touches yet")
-        sf_labels.push(label.new(x2, lp, s, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = sfFont))
-    // Extension targets (1.272 / 1.618) with measured hit rate
-    if sfExtShow
-        for i = 0 to 1
-            float ep = sf_ext_price(i)
-            sf_lines.push(line.new(x1, ep, x2, ep, color = color.new(sfExtColor, 20), style = line.style_dashed, width = sfLineWidth))
-            int hits = i == 0 ? sf_ext_hit1 : sf_ext_hit2
-            string es = str.tostring(array.get(SF_E, i), "#.###") + (sf_ext_attempts > 0 ? "  |  hit " + str.tostring(math.round(hits / float(sf_ext_attempts) * 100)) + "% (n=" + str.tostring(sf_ext_attempts) + ")" : "")
-            sf_labels.push(label.new(x2, ep, es, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfExtColor, size = sfFont))
+        sf_labels.push(label.new(x2, lp, s, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = size.small))
     true
 
 if sfShow and barstate.isconfirmed
@@ -2725,9 +2691,7 @@ if sfShow and barstate.isconfirmed
         sf_hi_bar := highSwing.index
         sf_lo_bar := lowSwing.index
         sf_is_up  := highSwing.index > lowSwing.index
-        sf_pend_bar  := na
-        sf_extp_bar  := na
-        sf_extp_hit1 := false
+        sf_pend_bar := na
         sf_draw()
 
     // Grade an open touch: bounce / break / timeout
@@ -2758,30 +2722,6 @@ if sfShow and barstate.isconfirmed
             sf_pend_bar   := bar_index
             sf_pend_lvl   := best_i
             sf_pend_price := sf_lvl_price(best_i)
-
-    // Extension targets: activate on a swing-extreme break, then measure hit rate
-    if sf_valid and sfExtShow and na(sf_extp_bar)
-        bool broke_extreme = sf_is_up ? close > sf_hi + sfBreakBuf * atr_raw : close < sf_lo - sfBreakBuf * atr_raw
-        if broke_extreme
-            sf_extp_bar  := bar_index
-            sf_extp_t1   := sf_ext_price(0)
-            sf_extp_t2   := sf_ext_price(1)
-            sf_extp_hit1 := false
-            sf_ext_attempts += 1
-
-    if sfExtShow and not na(sf_extp_bar)
-        bool ehit1 = sf_is_up ? high >= sf_extp_t1 : low <= sf_extp_t1
-        bool ehit2 = sf_is_up ? high >= sf_extp_t2 : low <= sf_extp_t2
-        if ehit1 and not sf_extp_hit1
-            sf_ext_hit1 += 1
-            sf_extp_hit1 := true
-        if ehit2
-            sf_ext_hit2 += 1
-            sf_extp_bar := na
-            sf_draw()
-        else if (bar_index - sf_extp_bar) >= sfExtWindow
-            sf_extp_bar := na
-            sf_draw()
 
 
 // Smoothing MA inputs
@@ -2831,6 +2771,7 @@ str_emabear2 = input.string(defval = 'close < ema', title = 'Bearish pattern clo
 show_ema2 = input.bool(defval = true, title = 'Show ema line', group = 'Filters 2', inline = 'ema2')
 len2 = input.int(defval = 55, title = '// Ema length : ', minval = 1, group = 'Filters 2', inline = 'ema2')
 
+show_single = input.bool(defval = true, title = 'Show pattern as single candle', group = 'General Show/Hide')
 showemamain = input.bool(defval = true, title = 'Show ema line on chart', group = 'General Show/Hide')
 show_pt_box = input.bool(defval = true, title = 'Show pattern boxes', group = 'General Show/Hide', inline = 'ptbox')
 show_pt_box2 = input.bool(defval = true, title = 'Show pattern boxes 2', group = 'General Show/Hide', inline = 'ptbox')
@@ -3348,6 +3289,8 @@ f_candlestick(_close, _open, _high, _low, _time, _tf, _bar, _plot, start, _show_
 
         [found, text_, num, ploth, plotl, plott, stext_, _c0, singleh, singlel, singleo]
 
+var lastploth = bar_index
+var lastplotl = bar_index
 dt = timeframe.in_seconds(tf) * 1000
 [xc0, xo0, xh0, xl0, xt0] = request.security(sym2, tf, [close, open, high, low, time], lookahead = barmerge.lookahead_on, ignore_invalid_symbol = true)
 
@@ -3356,6 +3299,10 @@ dt = timeframe.in_seconds(tf) * 1000
 [form2, txt2, nm2, plt2h, plt2l, plt2t, stext2, hh2, singleh2, singlel2, singleo2] = f_candlestick(close, open, high, low, time, stf, bar2, true, 40, show_candle2, htf2, e3, 2)
 
 confirme0 = double ? form0[1] and form1[1] : true
+hammer0 = 2 * (close[1] - singleo0[1]) <= singleo0[1] - singlel0[1] and singleh0[1] - close[1] < (close[1] - singleo0[1]) / 2
+hammer2 = 2 * (close[1] - singleo2[1]) <= singleo2[1] - singlel2[1] and singleh2[1] - close[1] < (close[1] - singleo2[1]) / 2
+shoot0 = 2 * (singleo0[1] - close[1]) <= singleh0[1] - singleo0[1] and close[1] - singlel0[1] < (singleo0[1] - close[1]) / 2
+shoot2 = 2 * (singleo2[1] - close[1]) <= singleh2[1] - singleo2[1] and close[1] - singlel2[1] < (singleo2[1] - close[1]) / 2
 
 if form0[1] and txt0[1] != txt0[2]
     alert(f_text(tf) + ' ' + txt0[1], alert.freq_once_per_bar)
@@ -3363,8 +3310,8 @@ if form0[1] and txt0[1] != txt0[2]
     // Sign-parameterized the mutually-exclusive nm0>0 / nm0<0 branches within
     // sequence 0. sgn=+1 (bull) / -1 (bear). Verified coordinate-equivalent to the
     // originals: box0 is byte-identical across signs; dq collapses to (|nm0|-1)*...
-    // for both signs; the vertical offset flips as -sgn*dq; label y/textcolor
-    // branch on sgn.
+    // for both signs; the vertical offset flips as -sgn*dq; label y/textcolor and
+    // the df anchor (lastplotl vs lastploth) and hammer/shoot branch on sgn.
     if (nm0[1] > 0 or nm0[1] < 0) and show_pt_box
         sgn0 = nm0[1] > 0 ? 1 : -1
         box0 := box.new(left = plt0t[1], top = plt0h[1], right = time[1], bottom = plt0l[1], xloc = xloc.bar_time, bgcolor = color.new(box_clr, cont_clr), border_color = color.new(box_clr, 30), text = '', text_size = sz, text_valign = text.align_bottom, text_halign = text.align_right, text_color = color.gray)
@@ -3374,6 +3321,22 @@ if form0[1] and txt0[1] != txt0[2]
             lbl0 := label.new(math.round((plt0t[1] + time[1]) / 2), sgn0 > 0 ? plt0l[1] - (nm0[1] - 2) * pattatr : plt0h[1] + (math.abs(nm0[1]) - 2) * pattatr, text = stext0[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = sgn0 > 0 ? bull_clr : bear_clr, size = sz)
             if show_last_label
                 label.delete(lbl0[1])
+        if show_single
+            df = bar_index - (sgn0 > 0 ? lastplotl : lastploth) <= 4 ? 3 * dt : 0
+            dq = (math.abs(nm0[1]) - 1) * pattatr + singleh0[1] - singlel0[1]
+            cx = df + math.round((plt0t[1] + time[1]) / 2)
+            sclr0 = sgn0 > 0 ? bull_clr : bear_clr
+            box.new(left = cx - dt, top = singleo0[1] - sgn0 * dq, right = cx + dt, bottom = close[1] - sgn0 * dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = sclr0, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = size.tiny, border_style = line.style_solid)
+            line.new(x1 = cx, y1 = singleo0[1] - sgn0 * dq, x2 = cx, y2 = singleh0[1] - sgn0 * dq, xloc = xloc.bar_time, color = sclr0, style = line.style_solid)
+            line.new(x1 = cx, y1 = close[1] - sgn0 * dq, x2 = cx, y2 = singlel0[1] - sgn0 * dq, xloc = xloc.bar_time, color = sclr0, style = line.style_solid)
+            if sgn0 > 0 and hammer0
+                label.new(x = cx, y = singlel0[1] - dq - pattatr, text = 'Hammer', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr, size = sz)
+            if sgn0 < 0 and shoot0
+                label.new(x = cx, y = singleh0[1] + dq + pattatr, text = 'Shooting Star', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr, size = sz)
+            if sgn0 > 0
+                lastplotl := bar_index
+            else
+                lastploth := bar_index
 
 if timeframe.change(stf)
     if form2[1] and txt2[1] != txt2
@@ -3391,6 +3354,22 @@ if timeframe.change(stf)
                 lbl2 := label.new(math.round((plt2t[1] + time[1]) / 2), sgn2 > 0 ? plt2l[1] - pattatr : plt2h[1] + pattatr, text = stext2[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = sgn2 > 0 ? bull_clr2 : bear_clr2, size = sz)
                 if show_last_label
                     label.delete(lbl2[1])
+            if show_single
+                df = bar_index - (sgn2 > 0 ? lastplotl : lastploth) <= 4 ? 3 * dt : 0
+                dq = 2 * pattatr + singleh2[1] - singlel2[1]
+                cx = df + math.round((plt2t[1] + time[1]) / 2)
+                sclr2 = sgn2 > 0 ? bull_clr2 : bear_clr2
+                box.new(left = cx - dt, top = singleo2[1] - sgn2 * dq, right = cx + dt, bottom = close[1] - sgn2 * dq, xloc = xloc.bar_time, border_color = color.new(color.navy, 100), bgcolor = sclr2, text = '', text_color = color.white, text_valign = text.align_center, text_halign = text.align_center, text_size = sz, border_style = line.style_solid)
+                line.new(x1 = cx, y1 = singleo2[1] - sgn2 * dq, x2 = cx, y2 = singleh2[1] - sgn2 * dq, xloc = xloc.bar_time, color = sclr2, style = line.style_solid)
+                line.new(x1 = cx, y1 = close[1] - sgn2 * dq, x2 = cx, y2 = singlel2[1] - sgn2 * dq, xloc = xloc.bar_time, color = sclr2, style = line.style_solid)
+                if sgn2 > 0 and hammer2
+                    label.new(x = cx, y = singlel2[1] - dq - pattatr, text = 'Hammer', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bull_clr2, size = sz)
+                if sgn2 < 0 and shoot2
+                    label.new(x = cx, y = singleh2[1] + dq + pattatr, text = 'Shooting Star', xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = bear_clr2, size = sz)
+                if sgn2 > 0
+                    lastplotl := bar_index
+                else
+                    lastploth := bar_index
 
 if show_table
     table.cell(tablo, 0, 0, text = 'Candlestick formation', text_color = color.white, bgcolor = color.red, text_size = sz)
