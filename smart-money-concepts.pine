@@ -2510,8 +2510,10 @@ if cfgShowDash and barstate.islast
 //------------------------------------------------------------------------------
 // Merged into the single indicator. Stand-alone @version/indicator() header
 // removed (one declaration per script). Verified: no identifier collisions with
-// existing engines (maxVol/atr are local-scoped or ta.* built-ins). NOTE: adds a
-// THIRD volume profile, a THIRD top-right dashboard, and a SECOND kNN engine.
+// existing engines (maxVol/atr are local-scoped or ta.* built-ins). Trimmed for
+// compile time: the redundant Delta Tank overlay and the duplicate top-right
+// dashboard were removed; the core multi-term kNN support/resistance lines, BOS
+// labels, and bias candle coloring remain.
 //==============================================================================
 
 //---------------------------------------------------------------------------------------------------------------------}
@@ -2532,8 +2534,6 @@ showMT            = input.bool(true, "Medium-Term Lines (MT)", group = "Visual H
 showLT            = input.bool(true, "Long-Term Lines (LT)", group = "Visual Hierarchy")
 colorCandlesInput = input.bool(true, "Color Candles by Bias", group = "Visual Hierarchy")
 biasSourceInput   = input.string("Auto", "Bias Source", options = ["Auto", "LT", "MT", "ST", "None"], group = "Visual Hierarchy")
-infoLabelSize     = input.string("Small", "Info Label Size", options = ["Tiny", "Small", "Normal", "Large"], group = "Visual Hierarchy")
-showDeltaTankInput = input.bool(true, "Show Delta Tank", group = "Visual Hierarchy")
 
 stLabelsInput     = input.bool(true, "Show ST Icons", inline = "ST", group = "Visual Hierarchy")
 stLabelInput      = input.string("•", "Icon", inline = "ST", group = "Visual Hierarchy")
@@ -2563,13 +2563,6 @@ type StructurePoint
     float feat1 
     float feat2 
     float score 
-
-type LineMetadata
-    int   startBar
-    float startPrice
-    label infoLabel
-    float cumVol = 0.0
-    float cumDelta = 0.0
 
 method getDistance(StructurePoint p1, StructurePoint p2) =>
     math.abs(p1.feat1 - p2.feat1) + math.abs(p1.feat2 - p2.feat2)
@@ -2628,10 +2621,6 @@ var line activeSTHigh = na, var line activeSTLow = na
 var line activeMTHigh = na, var line activeMTLow = na
 var line activeLTHigh = na, var line activeLTLow = na
 
-// Generic Metadata for the "Active Term"
-var LineMetadata activeMetaHigh = na
-var LineMetadata activeMetaLow  = na
-
 float relVol = volume / ta.sma(volume, 100)
 atr14 = ta.atr(14)
 float relATR = atr14 / ta.sma(atr14, 100)
@@ -2646,12 +2635,6 @@ f_parse_size(s) =>
         "Normal" => size.normal
         "Large"  => size.large
         => size.small
-
-parsedLabelSize = switch infoLabelSize
-    "Tiny"   => size.tiny
-    "Small"  => size.small
-    "Normal" => size.normal
-    "Large"  => size.large
 
 f_process_term(float ph, float pl, int len, string term, array<StructurePoint> hHigh, array<StructurePoint> hLow, line activeH, line activeL, bool showLines, bool showLabels) =>
     line outH = activeH
@@ -2706,14 +2689,6 @@ f_process_term(float ph, float pl, int len, string term, array<StructurePoint> h
 [stPH, stPL] = f_detect_pivots(baseLen)
 [newSTH, newSTL, stHT, stLT] = f_process_term(stPH, stPL, baseLen, "ST", stHistoryHigh, stHistoryLow, activeSTHigh, activeSTLow, showST, stLabelsInput)
 activeSTHigh := newSTH, activeSTLow := newSTL
-if stHT and activeTerm == "ST" and showDeltaTankInput
-    if not na(activeMetaHigh)
-        label.delete(activeMetaHigh.infoLabel)
-    activeMetaHigh := LineMetadata.new(bar_index[baseLen], stPH, label.new(bar_index, stPH, "", style = label.style_label_left, color = color.new(BULL_COLOR, 30), textcolor = color.white, size = parsedLabelSize))
-if stLT and activeTerm == "ST" and showDeltaTankInput
-    if not na(activeMetaLow)
-        label.delete(activeMetaLow.infoLabel)
-    activeMetaLow := LineMetadata.new(bar_index[baseLen], stPL, label.new(bar_index, stPL, "", style = label.style_label_left, color = color.new(BEAR_COLOR, 30), textcolor = color.white, size = parsedLabelSize))
 
 if not na(stPH)
     lastSTHigh := stPH
@@ -2724,14 +2699,6 @@ mtLen = baseLen * 3
 [mtPH, mtPL] = f_detect_pivots(mtLen)
 [newMTH, newMTL, mtHT, mtLT] = f_process_term(mtPH, mtPL, mtLen, "MT", mtHistoryHigh, mtHistoryLow, activeMTHigh, activeMTLow, showMT, mtLabelsInput)
 activeMTHigh := newMTH, activeMTLow := newMTL
-if mtHT and activeTerm == "MT" and showDeltaTankInput
-    if not na(activeMetaHigh)
-        label.delete(activeMetaHigh.infoLabel)
-    activeMetaHigh := LineMetadata.new(bar_index[mtLen], mtPH, label.new(bar_index, mtPH, "", style = label.style_label_left, color = color.new(BULL_COLOR, 30), textcolor = color.white, size = parsedLabelSize))
-if mtLT and activeTerm == "MT" and showDeltaTankInput
-    if not na(activeMetaLow)
-        label.delete(activeMetaLow.infoLabel)
-    activeMetaLow := LineMetadata.new(bar_index[mtLen], mtPL, label.new(bar_index, mtPL, "", style = label.style_label_left, color = color.new(BEAR_COLOR, 30), textcolor = color.white, size = parsedLabelSize))
 
 if not na(mtPH)
     lastMTHigh := mtPH
@@ -2742,53 +2709,14 @@ ltLen = mtLen * 3
 [ltPH, ltPL] = f_detect_pivots(ltLen)
 [newLTH, newLTL, ltHT, ltLT] = f_process_term(ltPH, ltPL, ltLen, "LT", ltHistoryHigh, ltHistoryLow, activeLTHigh, activeLTLow, showLT, ltLabelsInput)
 activeLTHigh := newLTH, activeLTLow := newLTL
-if ltHT and activeTerm == "LT" and showDeltaTankInput
-    if not na(activeMetaHigh)
-        label.delete(activeMetaHigh.infoLabel)
-    activeMetaHigh := LineMetadata.new(bar_index[ltLen], ltPH, label.new(bar_index, ltPH, "", style = label.style_label_left, color = color.new(BULL_COLOR, 30), textcolor = color.white, size = parsedLabelSize))
-if ltLT and activeTerm == "LT" and showDeltaTankInput
-    if not na(activeMetaLow)
-        label.delete(activeMetaLow.infoLabel)
-    activeMetaLow := LineMetadata.new(bar_index[ltLen], ltPL, label.new(bar_index, ltPL, "", style = label.style_label_left, color = color.new(BEAR_COLOR, 30), textcolor = color.white, size = parsedLabelSize))
 
 if not na(ltPH)
     lastLTHigh := ltPH
 if not na(ltPL)
     lastLTLow := ltPL
 
-// Metadata Accumulator Update
-f_update_metadata(LineMetadata m) =>
-    if not na(m) and not na(m.infoLabel)
-        m.cumVol += volume
-        m.cumDelta += (close > open ? volume : -volume)
-        
-        float fillRatio = math.max(0, math.min(1, math.abs(m.cumDelta) / math.max(1, m.cumVol)))
-        int fillBlocks = math.round(fillRatio * 10)
-        
-        string barStr = ""
-        for i = 1 to 10
-            barStr += i <= fillBlocks ? "█" : "░"
-            
-        string icon = m.cumDelta >= 0 ? "▲" : "▼"
-        color deltaColor = m.cumDelta >= 0 ? BULL_COLOR : BEAR_COLOR
-        
-        txt = " [ DELTA TANK ] \n" +
-              "       " + icon + "       \n" +
-              " " + barStr + " \n" +
-              "       " + str.tostring(fillRatio * 100, "#") + "%       "
-        
-        m.infoLabel.set_text(txt)
-        m.infoLabel.set_color(color.new(deltaColor, 30))
-        m.infoLabel.set_textcolor(color.white)
-        m.infoLabel.set_x(bar_index)
-
-if not na(activeMetaHigh) 
-    f_update_metadata(activeMetaHigh)
-if not na(activeMetaLow) 
-    f_update_metadata(activeMetaLow)
-
 // Termination Logic
-f_terminate_line(line l, color lineCol, string term, LineMetadata meta = na, string bosSize = "Small") =>
+f_terminate_line(line l, color lineCol, string term, string bosSize = "Small") =>
     line out = l
     if not na(l)
         isHigh = lineCol == BULL_COLOR
@@ -2800,19 +2728,17 @@ f_terminate_line(line l, color lineCol, string term, LineMetadata meta = na, str
             lblStyle = isHigh ? label.style_label_down : label.style_label_up
             if bosSize != "None"
                 label.new(midX, l.get_y1(), term + " BOS", style = lblStyle, color = #00000000, textcolor = bosCol, size = f_parse_size(bosSize))
-            if not na(meta) 
-                label.delete(meta.infoLabel)
             out := na
         else
             l.set_x2(bar_index)
     out
 
-activeSTHigh := f_terminate_line(activeSTHigh, BULL_COLOR, "ST", activeTerm == "ST" ? activeMetaHigh : na, stBOSInput)
-activeSTLow  := f_terminate_line(activeSTLow, BEAR_COLOR, "ST", activeTerm == "ST" ? activeMetaLow : na, stBOSInput)
-activeMTHigh := f_terminate_line(activeMTHigh, BULL_COLOR, "MT", activeTerm == "MT" ? activeMetaHigh : na, mtBOSInput)
-activeMTLow  := f_terminate_line(activeMTLow, BEAR_COLOR, "MT", activeTerm == "MT" ? activeMetaLow : na, mtBOSInput)
-activeLTHigh := f_terminate_line(activeLTHigh, BULL_COLOR, "LT", activeTerm == "LT" ? activeMetaHigh : na, ltBOSInput)
-activeLTLow  := f_terminate_line(activeLTLow, BEAR_COLOR, "LT", activeTerm == "LT" ? activeMetaLow : na, ltBOSInput)
+activeSTHigh := f_terminate_line(activeSTHigh, BULL_COLOR, "ST", stBOSInput)
+activeSTLow  := f_terminate_line(activeSTLow, BEAR_COLOR, "ST", stBOSInput)
+activeMTHigh := f_terminate_line(activeMTHigh, BULL_COLOR, "MT", mtBOSInput)
+activeMTLow  := f_terminate_line(activeMTLow, BEAR_COLOR, "MT", mtBOSInput)
+activeLTHigh := f_terminate_line(activeLTHigh, BULL_COLOR, "LT", ltBOSInput)
+activeLTLow  := f_terminate_line(activeLTLow, BEAR_COLOR, "LT", ltBOSInput)
 
 //---------------------------------------------------------------------------------------------------------------------}
 // Hierarchy Logic for Coloring and Bias
@@ -2830,21 +2756,6 @@ if not na(selectedHigh) and not na(selectedLow)
         candleColor := BEAR_COLOR
 
 barcolor(colorCandlesInput ? candleColor : na)
-
-//---------------------------------------------------------------------------------------------------------------------}
-// Dashboard
-//---------------------------------------------------------------------------------------------------------------------{
-DATA = #DBDBDB, HEADERS = #808080, BACKGROUND = #161616, BORDERS = #2E2E2E
-if input.bool(true, 'Dashboard', group = 'kNN Dashboard') and barstate.islast
-    var t = table.new(position.top_right, 3, 5, bgcolor = BACKGROUND, frame_color = BORDERS, frame_width = 1)
-    t.merge_cells(0,0,2,0)
-    t.cell(0,0, 'Multi-Term kNN [LuxAlgo]', text_color = DATA, text_size = size.small)
-    t.cell(0,2, 'Active Term', text_color = HEADERS, text_halign = text.align_left, text_size = size.small)
-    t.cell(1,2, activeTerm == "" ? "None" : activeTerm, text_color = DATA, text_size = size.small)
-    t.cell(0,4, 'Bias', text_color = HEADERS, text_halign = text.align_left, text_size = size.small)
-    
-    biasStr = close > selectedHigh ? 'Bullish' : close < selectedLow ? 'Bearish' : 'Neutral'
-    t.cell(1,4, biasStr, text_color = biasStr == 'Bullish' ? BULL_COLOR : biasStr == 'Bearish' ? BEAR_COLOR : NEUTRAL_COLOR, text_size = size.small)
 
 //==============================================================================
 //        DELTAFLOW VOLUME PROFILE  (© BigBeluga)
