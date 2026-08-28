@@ -2958,211 +2958,111 @@ if isDownMove != isDownMove[1]
 
 // REAL-TIME SWING LEG --------------------------------------------------------
 
-// Real-time profile rebuilding while swing is still forming
-if not isDownMove
+// Real-time profile rebuild on the forming swing. The up-move and down-move
+// cases were identical, so the former if/else is collapsed into one
+// unconditional block (boxes cleared every bar; heavy work gated to last bar).
 
-    // Clear boxes on every update
-    for b in profileBoxes
-        b.delete()
-    profileBoxes.clear()
+// Clear boxes on every update
+for b in profileBoxes
+    b.delete()
+profileBoxes.clear()
 
-    if barstate.islast
+if barstate.islast
 
-        swingMainColor = chart.fg_color
+    swingMainColor = chart.fg_color
 
-        // Remove previous zigzag preview line
-        line.delete(line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = line.style_dashed)[1])
+    // Remove previous zigzag preview line
+    line.delete(line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = line.style_dashed)[1])
 
-        swingBottom = math.min(highSwing.price, lowSwing.price)
-        swingTop    = math.max(highSwing.price, lowSwing.price)
+    swingBottom = math.min(highSwing.price, lowSwing.price)
+    swingTop    = math.max(highSwing.price, lowSwing.price)
 
-        binCount = int(math.abs(highSwing.price - lowSwing.price) / priceBinSize)
-        binStep  = math.abs(highSwing.price - lowSwing.price) / binCount
+    binCount = int(math.abs(highSwing.price - lowSwing.price) / priceBinSize)
+    binStep  = math.abs(highSwing.price - lowSwing.price) / binCount
 
-        lastSwingIndex = math.max(highSwing.index, lowSwing.index)
-        prevSwingIndex = math.min(highSwing.index, lowSwing.index)
+    lastSwingIndex = math.max(highSwing.index, lowSwing.index)
+    prevSwingIndex = math.min(highSwing.index, lowSwing.index)
 
-        volumeBins = array.new<float>(binCount, 0.)
-        profilePoints = array.new<chart.point>()
-        buyVolumeBins = array.new<float>(binCount, 0.)
-        sellVolumeBins = array.new<float>(binCount, 0.)
+    volumeBins = array.new<float>(binCount, 0.)
+    profilePoints = array.new<chart.point>()
+    buyVolumeBins = array.new<float>(binCount, 0.)
+    sellVolumeBins = array.new<float>(binCount, 0.)
 
-        barOffset = bar_index - lastSwingIndex
+    barOffset = bar_index - lastSwingIndex
 
-        // Accumulate volume in real time
-        for i = barOffset to (lastSwingIndex - prevSwingIndex) + barOffset
+    // Accumulate volume in real time
+    for i = barOffset to (lastSwingIndex - prevSwingIndex) + barOffset
 
-            candleClose = close[i]
-            candleOpen  = open[i]
-            candleVol   = volume[i]
-
-            for k = 0 to binCount - 1
-                binMidPrice = swingBottom + (k * binStep) + (binStep / 2)
-
-                if math.abs(binMidPrice - candleClose) < binStep
-
-                    volumeBins.set(k, volumeBins.get(k) + candleVol)
-                    if candleClose > candleOpen
-                        buyVolumeBins.set(k, buyVolumeBins.get(k) + candleVol)
-                    else
-                        sellVolumeBins.set(k, sellVolumeBins.get(k) + candleVol)
-
-        // Draw real-time boxes
-        for k = 0 to binCount - 1
-
-            binLow  = swingBottom + (k * binStep)
-            binHigh = binLow + binStep
-
-            volumeRatio = volumeBins.get(k) / volumeBins.max()
-            profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
-
-            if volumeRatio == 1 and showPOC
-                pocLineHandle := line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
-                line.delete(pocLineHandle[1])
-
-            profileBoxes.push(box.new(
-                 showProfile ? prevSwingIndex + profileWidth : prevSwingIndex,
-                 binHigh,
-                 showHeatMap ? lastSwingIndex : prevSwingIndex,
-                 binLow,
-                 transparentNA,
-                 0,
-                 bgcolor = showProfile or showHeatMap ? color.from_gradient(volumeRatio, 0, 1, color.new(swingMainColor, 90), color.new(volumeRatio == 1 and showPOC ? pocColor : swingMainColor, 50)) : transparentNA,
-                 text = showHeatMap ? "" : volumeRatio == 1 ? str.tostring(volumeBins.max(), format.volume) : ""
-            ))
-
-            if k == 0
-                profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
-            profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
-            profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
-            if k == binCount - 1
-                profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
-
-        // Update polyline in real time
-        if showProfile
-            polyline.delete(profilePoly[1])
-            profilePoly := polyline.new(profilePoints, false, true, line_color = showHeatMap ? color.new(swingMainColor, 50) : swingMainColor)
-
-        // Label with summary data
-        swingTooltip = "T - Total Volume\nB - Buy Volume\nS - Sell Volume\nD - Delta Volume"
-
-        swingDataText =
-              "T: " + str.tostring(volumeBins.sum(), format.volume)
-             + "\nB: " + str.tostring(buyVolumeBins.sum(), format.volume)
-             + "\nS: " + str.tostring(sellVolumeBins.sum(), format.volume)
-             + "\nD: " + str.tostring((buyVolumeBins.sum() - sellVolumeBins.sum()) / volumeBins.sum() * 100, format.percent)
-
-        dataLabel := label.new(prevSwingIndex, not isDownMove ? swingTop : swingBottom, swingDataText,
-             style = not isDownMove ? label.style_label_down : label.style_label_up,
-             color = transparentNA,
-             textcolor = swingMainColor,
-             size = getLabelSize(),
-             tooltip = swingTooltip,
-             textalign = text.align_left)
-
-        label.delete(dataLabel[1])
-
-
-// MIRROR OF ABOVE FOR isDownMove == true ------------------------------------------
-
-// Mirror logic for bullish direction
-else
-
-    for b in profileBoxes
-        b.delete()
-    profileBoxes.clear()
-
-    if barstate.islast
-
-        swingMainColor = chart.fg_color
-
-        line.delete(line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = line.style_dashed)[1])
-
-        swingBottom = math.min(highSwing.price, lowSwing.price)
-        swingTop    = math.max(highSwing.price, lowSwing.price)
-
-        binCount = int(math.abs(highSwing.price - lowSwing.price) / priceBinSize)
-        binStep  = math.abs(highSwing.price - lowSwing.price) / binCount
-
-        lastSwingIndex = math.max(highSwing.index, lowSwing.index)
-        prevSwingIndex = math.min(highSwing.index, lowSwing.index)
-
-        volumeBins = array.new<float>(binCount, 0.)
-        profilePoints = array.new<chart.point>()
-        buyVolumeBins = array.new<float>(binCount, 0.)
-        sellVolumeBins = array.new<float>(binCount, 0.)
-
-        barOffset = bar_index - lastSwingIndex
-
-        for i = barOffset to (lastSwingIndex - prevSwingIndex) + barOffset
-
-            candleClose = close[i]
-            candleOpen  = open[i]
-            candleVol   = volume[i]
-
-            for k = 0 to binCount - 1
-
-                binMidPrice = swingBottom + (k * binStep) + (binStep / 2)
-
-                if math.abs(binMidPrice - candleClose) < binStep
-
-                    volumeBins.set(k, volumeBins.get(k) + candleVol)
-                    if candleClose > candleOpen
-                        buyVolumeBins.set(k, buyVolumeBins.get(k) + candleVol)
-                    else
-                        sellVolumeBins.set(k, sellVolumeBins.get(k) + candleVol)
+        candleClose = close[i]
+        candleOpen  = open[i]
+        candleVol   = volume[i]
 
         for k = 0 to binCount - 1
+            binMidPrice = swingBottom + (k * binStep) + (binStep / 2)
 
-            binLow  = swingBottom + (k * binStep)
-            binHigh = binLow + binStep
+            if math.abs(binMidPrice - candleClose) < binStep
 
-            volumeRatio = volumeBins.get(k) / volumeBins.max()
-            profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
+                volumeBins.set(k, volumeBins.get(k) + candleVol)
+                if candleClose > candleOpen
+                    buyVolumeBins.set(k, buyVolumeBins.get(k) + candleVol)
+                else
+                    sellVolumeBins.set(k, sellVolumeBins.get(k) + candleVol)
 
-            if volumeRatio == 1 and showPOC
-                pocLineHandle := line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
-                line.delete(pocLineHandle[1])
+    // Draw real-time boxes
+    for k = 0 to binCount - 1
 
-            profileBoxes.push(box.new(
-                 showProfile ? prevSwingIndex + profileWidth : prevSwingIndex,
-                 binHigh,
-                 showHeatMap ? lastSwingIndex : prevSwingIndex,
-                 binLow,
-                 transparentNA,
-                 0,
-                 bgcolor = showProfile or showHeatMap ? color.from_gradient(volumeRatio, 0, 1, color.new(swingMainColor, 90), color.new(volumeRatio == 1 and showPOC ? pocColor : swingMainColor, 50)) : transparentNA,
-                 text = showHeatMap ? "" : volumeRatio == 1 ? str.tostring(volumeBins.max(), format.volume) : ""
-             ))
+        binLow  = swingBottom + (k * binStep)
+        binHigh = binLow + binStep
 
-            if k == 0
-                profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
-            profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
-            profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
-            if k == binCount - 1
-                profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
+        volumeRatio = volumeBins.get(k) / volumeBins.max()
+        profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
 
-        if showProfile
-            polyline.delete(profilePoly[1])
-            profilePoly := polyline.new(profilePoints, false, true, line_color = showHeatMap ? color.new(swingMainColor, 50) : swingMainColor)
+        if volumeRatio == 1 and showPOC
+            pocLineHandle := line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
+            line.delete(pocLineHandle[1])
 
-        swingTooltip = "T - Total Volume\nB - Buy Volume\nS - Sell Volume\nD - Delta Volume"
+        profileBoxes.push(box.new(
+             showProfile ? prevSwingIndex + profileWidth : prevSwingIndex,
+             binHigh,
+             showHeatMap ? lastSwingIndex : prevSwingIndex,
+             binLow,
+             transparentNA,
+             0,
+             bgcolor = showProfile or showHeatMap ? color.from_gradient(volumeRatio, 0, 1, color.new(swingMainColor, 90), color.new(volumeRatio == 1 and showPOC ? pocColor : swingMainColor, 50)) : transparentNA,
+             text = showHeatMap ? "" : volumeRatio == 1 ? str.tostring(volumeBins.max(), format.volume) : ""
+        ))
 
-        swingDataText =
-              "T: " + str.tostring(volumeBins.sum(), format.volume)
-             + "\nB: " + str.tostring(buyVolumeBins.sum(), format.volume)
-             + "\nS: " + str.tostring(sellVolumeBins.sum(), format.volume)
-             + "\nD: " + str.tostring((buyVolumeBins.sum() - sellVolumeBins.sum()) / volumeBins.sum() * 100, format.percent)
+        if k == 0
+            profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
+        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
+        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
+        if k == binCount - 1
+            profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
 
-        dataLabel := label.new(prevSwingIndex, not isDownMove ? swingTop : swingBottom, swingDataText,
-             style = not isDownMove ? label.style_label_down : label.style_label_up,
-             color = transparentNA,
-             textcolor = swingMainColor,
-             size = getLabelSize(),
-             tooltip = swingTooltip,
-             textalign = text.align_left)
+    // Update polyline in real time
+    if showProfile
+        polyline.delete(profilePoly[1])
+        profilePoly := polyline.new(profilePoints, false, true, line_color = showHeatMap ? color.new(swingMainColor, 50) : swingMainColor)
 
-        label.delete(dataLabel[1])
+    // Label with summary data
+    swingTooltip = "T - Total Volume\nB - Buy Volume\nS - Sell Volume\nD - Delta Volume"
+
+    swingDataText =
+          "T: " + str.tostring(volumeBins.sum(), format.volume)
+         + "\nB: " + str.tostring(buyVolumeBins.sum(), format.volume)
+         + "\nS: " + str.tostring(sellVolumeBins.sum(), format.volume)
+         + "\nD: " + str.tostring((buyVolumeBins.sum() - sellVolumeBins.sum()) / volumeBins.sum() * 100, format.percent)
+
+    dataLabel := label.new(prevSwingIndex, not isDownMove ? swingTop : swingBottom, swingDataText,
+         style = not isDownMove ? label.style_label_down : label.style_label_up,
+         color = transparentNA,
+         textcolor = swingMainColor,
+         size = getLabelSize(),
+         tooltip = swingTooltip,
+         textalign = text.align_left)
+
+    label.delete(dataLabel[1])
+
 
 
 // Smoothing MA inputs
