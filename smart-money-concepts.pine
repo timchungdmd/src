@@ -2854,6 +2854,9 @@ f_draw_bin(int prevX, int lastX, float binLow, float binHigh, float ratio, int w
     made
 
 
+// Default bin size based on ATR (declared before the functions that use it)
+priceBinSize = ta.atr(200) * 0.5
+
 // Build a swing profile: geometry + per-bin volume accumulation. Shared by the
 // historical and real-time legs so the heavy double-loop exists only once.
 f_build_profile(float hiPrice, int hiIdx, float loPrice, int loIdx) =>
@@ -2944,9 +2947,6 @@ if high[1] == highestSwingHigh[1] and high < highestSwingHigh
 if low[1] == lowestSwingLow[1] and low > lowestSwingLow
     lowSwing.index := bar_index[1]
     lowSwing.price := low[1]
-
-// Default bin size based on ATR
-priceBinSize = ta.atr(200) * 0.5
 
 // HISTORICAL SWING LEG -------------------------------------------------------
 
