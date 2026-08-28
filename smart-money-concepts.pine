@@ -2854,11 +2854,64 @@ f_draw_bin(int prevX, int lastX, float binLow, float binHigh, float ratio, int w
     made
 
 
+// Build a swing profile: geometry + per-bin volume accumulation. Shared by the
+// historical and real-time legs so the heavy double-loop exists only once.
+f_build_profile(float hiPrice, int hiIdx, float loPrice, int loIdx) =>
+    float swingBottom = math.min(hiPrice, loPrice)
+    float swingTop    = math.max(hiPrice, loPrice)
+    int   binCount = int(math.abs(hiPrice - loPrice) / priceBinSize)
+    float binStep  = math.abs(hiPrice - loPrice) / binCount
+    int   lastSwingIndex = math.max(hiIdx, loIdx)
+    int   prevSwingIndex = math.min(hiIdx, loIdx)
+    array<float> volumeBins    = array.new<float>(binCount, 0.)
+    array<float> buyVolumeBins  = array.new<float>(binCount, 0.)
+    array<float> sellVolumeBins = array.new<float>(binCount, 0.)
+    int barOffset = bar_index - lastSwingIndex
+    for i = barOffset to (lastSwingIndex - prevSwingIndex) + barOffset
+        float candleClose = close[i]
+        float candleOpen  = open[i]
+        float candleVol   = volume[i]
+        for k = 0 to binCount - 1
+            float binMidPrice = swingBottom + (k * binStep) + (binStep / 2)
+            if math.abs(binMidPrice - candleClose) < binStep
+                volumeBins.set(k, volumeBins.get(k) + candleVol)
+                if candleClose > candleOpen
+                    buyVolumeBins.set(k, buyVolumeBins.get(k) + candleVol)
+                else
+                    sellVolumeBins.set(k, sellVolumeBins.get(k) + candleVol)
+    [swingBottom, swingTop, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins]
+
+// Render every bin (POC line + main box + DeltaFlow visuals) and build the
+// profile outline. Returns the outline points, the boxes, and the POC lines so
+// the caller can let them persist (history) or track them for deletion (real-time).
+f_render_bins(float swingBottom, int binCount, float binStep, int lastSwingIndex, int prevSwingIndex, array<float> volumeBins, array<float> buyVolumeBins, array<float> sellVolumeBins, color mainCol) =>
+    float maxVol = volumeBins.max()
+    array<chart.point> profilePoints = array.new<chart.point>()
+    array<box>  boxes = array.new<box>()
+    array<line> pocLines = array.new<line>()
+    for k = 0 to binCount - 1
+        float binLow  = swingBottom + (k * binStep)
+        float binHigh = binLow + binStep
+        float volumeRatio = volumeBins.get(k) / maxVol
+        int   profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
+        if volumeRatio == 1 and showPOC
+            pocLines.push(line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput))
+        for bb in f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), maxVol, mainCol)
+            boxes.push(bb)
+        if k == 0
+            profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
+        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
+        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
+        if k == binCount - 1
+            profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
+    [profilePoints, boxes, pocLines]
+
+
 // Persistent storage containers
 var polyline profilePoly = na
 var dataLabel = label(na)
-var pocLineHandle = line(na)
 var profileBoxes = array.new<box>()
+var profilePocLines = array.new<line>()
 
 // Structs for swing points
 type SwingData
@@ -2913,67 +2966,9 @@ if isDownMove != isDownMove[1]
     if showZigZag
         line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = getZigZagLineStyle())
 
-    // Determine swing boundaries
-    swingBottom = math.min(highSwing.price, lowSwing.price)
-    swingTop    = math.max(highSwing.price, lowSwing.price)
-
-    // Number of volume bins
-    binCount = int(math.abs(highSwing.price - lowSwing.price) / priceBinSize)
-    binStep  = math.abs(highSwing.price - lowSwing.price) / binCount
-
-    lastSwingIndex = math.max(highSwing.index, lowSwing.index)
-    prevSwingIndex = math.min(highSwing.index, lowSwing.index)
-
-    // Arrays for volume accumulation
-    volumeBins = array.new<float>(binCount, 0.)
-    profilePoints = array.new<chart.point>()
-    buyVolumeBins = array.new<float>(binCount, 0.)
-    sellVolumeBins = array.new<float>(binCount, 0.)
-
-    barOffset = bar_index - lastSwingIndex
-
-    // Accumulate volume per price bin
-    for i = barOffset to (lastSwingIndex - prevSwingIndex) + barOffset
-
-        candleClose = close[i]
-        candleOpen  = open[i]
-        candleVol   = volume[i]
-
-        for k = 0 to binCount - 1
-            binMidPrice = swingBottom + (k * binStep) + (binStep / 2)
-
-            if math.abs(binMidPrice - candleClose) < binStep
-
-                volumeBins.set(k, volumeBins.get(k) + candleVol)
-
-                if candleClose > candleOpen
-                    buyVolumeBins.set(k, buyVolumeBins.get(k) + candleVol)
-                else
-                    sellVolumeBins.set(k, sellVolumeBins.get(k) + candleVol)
-
-    // Draw boxes and build profile outline
-    for k = 0 to binCount - 1
-
-        binLow  = swingBottom + (k * binStep)
-        binHigh = binLow + binStep
-
-        volumeRatio = volumeBins.get(k) / volumeBins.max()
-        profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
-
-        // Draw POC line
-        if volumeRatio == 1 and showPOC
-            line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
-
-        // Draw bin: main volume box + optional DeltaFlow visuals (persist as history)
-        f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), volumeBins.max(), swingMainColor)
-
-        // Build polygon outline
-        if k == 0
-            profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
-        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
-        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
-        if k == binCount - 1
-            profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
+    // Build the completed swing profile and render it (boxes / POC persist as history)
+    [swingBottom, swingTop, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins] = f_build_profile(highSwing.price, highSwing.index, lowSwing.price, lowSwing.index)
+    [profilePoints, historyBoxes, historyPoc] = f_render_bins(swingBottom, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins, swingMainColor)
 
     // Draw outer polyline
     if showProfile
@@ -3002,10 +2997,13 @@ if isDownMove != isDownMove[1]
 // cases were identical, so the former if/else is collapsed into one
 // unconditional block (boxes cleared every bar; heavy work gated to last bar).
 
-// Clear boxes on every update
+// Clear the real-time drawings on every update
 for b in profileBoxes
     b.delete()
 profileBoxes.clear()
+for l in profilePocLines
+    line.delete(l)
+profilePocLines.clear()
 
 if barstate.islast
 
@@ -3014,62 +3012,13 @@ if barstate.islast
     // Remove previous zigzag preview line
     line.delete(line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = line.style_dashed)[1])
 
-    swingBottom = math.min(highSwing.price, lowSwing.price)
-    swingTop    = math.max(highSwing.price, lowSwing.price)
-
-    binCount = int(math.abs(highSwing.price - lowSwing.price) / priceBinSize)
-    binStep  = math.abs(highSwing.price - lowSwing.price) / binCount
-
-    lastSwingIndex = math.max(highSwing.index, lowSwing.index)
-    prevSwingIndex = math.min(highSwing.index, lowSwing.index)
-
-    volumeBins = array.new<float>(binCount, 0.)
-    profilePoints = array.new<chart.point>()
-    buyVolumeBins = array.new<float>(binCount, 0.)
-    sellVolumeBins = array.new<float>(binCount, 0.)
-
-    barOffset = bar_index - lastSwingIndex
-
-    // Accumulate volume in real time
-    for i = barOffset to (lastSwingIndex - prevSwingIndex) + barOffset
-
-        candleClose = close[i]
-        candleOpen  = open[i]
-        candleVol   = volume[i]
-
-        for k = 0 to binCount - 1
-            binMidPrice = swingBottom + (k * binStep) + (binStep / 2)
-
-            if math.abs(binMidPrice - candleClose) < binStep
-
-                volumeBins.set(k, volumeBins.get(k) + candleVol)
-                if candleClose > candleOpen
-                    buyVolumeBins.set(k, buyVolumeBins.get(k) + candleVol)
-                else
-                    sellVolumeBins.set(k, sellVolumeBins.get(k) + candleVol)
-
-    // Draw real-time boxes
-    for k = 0 to binCount - 1
-
-        binLow  = swingBottom + (k * binStep)
-        binHigh = binLow + binStep
-
-        volumeRatio = volumeBins.get(k) / volumeBins.max()
-        profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
-
-        if volumeRatio == 1 and showPOC
-            pocLineHandle := line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
-            line.delete(pocLineHandle[1])
-
-        for bb in f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), volumeBins.max(), swingMainColor)
-            profileBoxes.push(bb)
-
-        if k == 0
-            profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
-        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
-        profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
-        if k == binCount - 1
-            profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
+    // Build the forming swing profile and render it into the tracked containers
+    [swingBottom, swingTop, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins] = f_build_profile(highSwing.price, highSwing.index, lowSwing.price, lowSwing.index)
+    [profilePoints, rtBoxes, rtPoc] = f_render_bins(swingBottom, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins, swingMainColor)
+    for bb in rtBoxes
+        profileBoxes.push(bb)
+    for ll in rtPoc
+        profilePocLines.push(ll)
 
     // Update polyline in real time
     if showProfile
