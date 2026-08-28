@@ -2805,6 +2805,55 @@ getZigZagLineStyle() =>
         "Solid"  => line.style_solid
 
 
+// DeltaFlow overlay (per-bin buy/sell breakdown). All off by default, so the
+// default look and drawing/compile cost are unchanged unless a toggle is on.
+dfVolumeBars   = input.bool(false, "Buy/Sell Split Bars", group = "DeltaFlow Overlay")
+dfDeltaPanel   = input.bool(false, "Delta % Side Panel", group = "DeltaFlow Overlay")
+dfDeltaHeatMap = input.bool(false, "Delta Heat Map", group = "DeltaFlow Overlay")
+dfBullColor    = input.color(color.teal, "Buy / Sell", inline = "dfcol", group = "DeltaFlow Overlay")
+dfBearColor    = input.color(color.rgb(230, 150, 30), "", inline = "dfcol", group = "DeltaFlow Overlay")
+dfPanelWidth   = input.int(8, "Δ Panel Width (bars)", minval = 2, group = "DeltaFlow Overlay")
+
+// Per-bin renderer: the main volume box plus the optional DeltaFlow visuals
+// (delta heat band, buy/sell split bars, Δ% side panel). Returns every box it
+// creates so the caller can track them (real-time) or let them persist (history).
+f_draw_bin(int prevX, int lastX, float binLow, float binHigh, float ratio, int width, float binBuy, float binSell, float binVol, float maxVol, color mainCol) =>
+    array<box> made = array.new<box>()
+    float mid = math.avg(binLow, binHigh)
+    float binDeltaPct = binVol > 0 ? (binBuy - binSell) / binVol * 100 : 0.0
+    color deltaCol = color.from_gradient(binDeltaPct, -60, 60, dfBearColor, dfBullColor)
+
+    // Delta heat band: full-width background, intensity by volume ratio
+    if dfDeltaHeatMap
+        made.push(box.new(prevX, binHigh, lastX, binLow, transparentNA, 0,
+             bgcolor = color.from_gradient(ratio, 0, 1, color.new(deltaCol, 100), color.new(deltaCol, 55))))
+
+    // Main volume box (unchanged look)
+    made.push(box.new(showProfile ? prevX + width : prevX, binHigh, showHeatMap ? lastX : prevX, binLow,
+         transparentNA, 0,
+         bgcolor = showProfile or showHeatMap ? color.from_gradient(ratio, 0, 1, color.new(mainCol, 90), color.new(ratio == 1 and showPOC ? pocColor : mainCol, 50)) : transparentNA,
+         text = showHeatMap or dfVolumeBars ? "" : ratio == 1 ? str.tostring(maxVol, format.volume) : ""))
+
+    // Buy/Sell split bars: bull segment (lower half), bear segment (upper half)
+    if dfVolumeBars and maxVol > 0
+        int buyW  = int((binBuy  / maxVol) * ((lastX - prevX) / 2))
+        int sellW = int((binSell / maxVol) * ((lastX - prevX) / 2))
+        made.push(box.new(prevX, mid, prevX + buyW, binLow, bgcolor = dfBullColor,
+             border_color = chart.bg_color, border_width = 1,
+             text = str.tostring(binBuy / maxVol * 100, format.percent), text_halign = text.align_left, text_size = size.tiny))
+        made.push(box.new(prevX, binHigh, prevX + sellW, mid, bgcolor = dfBearColor,
+             border_color = chart.bg_color, border_width = 1,
+             text = str.tostring(binSell / maxVol * 100, format.percent), text_halign = text.align_left, text_size = size.tiny))
+
+    // Δ% side panel to the right of the swing leg
+    if dfDeltaPanel
+        made.push(box.new(lastX, binHigh, lastX + dfPanelWidth, binLow,
+             border_color = chart.bg_color, border_width = 1, bgcolor = color.new(deltaCol, 80),
+             text = "Δ " + str.tostring(binDeltaPct, format.percent), text_color = deltaCol, text_size = size.tiny))
+
+    made
+
+
 // Persistent storage containers
 var polyline profilePoly = na
 var dataLabel = label(na)
@@ -2915,17 +2964,8 @@ if isDownMove != isDownMove[1]
         if volumeRatio == 1 and showPOC
             line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
 
-        // Create volume box
-        box.new(
-            showProfile ? prevSwingIndex + profileWidth : prevSwingIndex,
-            binHigh,
-            showHeatMap ? lastSwingIndex : prevSwingIndex,
-            binLow,
-            transparentNA,
-            0,
-            bgcolor = showProfile or showHeatMap ? color.from_gradient(volumeRatio, 0, 1, color.new(swingMainColor, 90), color.new(volumeRatio == 1 and showPOC ? pocColor : swingMainColor, 50)) : transparentNA,
-            text = showHeatMap ? "" : volumeRatio == 1 ? str.tostring(volumeBins.max(), format.volume) : ""
-        )
+        // Draw bin: main volume box + optional DeltaFlow visuals (persist as history)
+        f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), volumeBins.max(), swingMainColor)
 
         // Build polygon outline
         if k == 0
@@ -3021,16 +3061,8 @@ if barstate.islast
             pocLineHandle := line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput)
             line.delete(pocLineHandle[1])
 
-        profileBoxes.push(box.new(
-             showProfile ? prevSwingIndex + profileWidth : prevSwingIndex,
-             binHigh,
-             showHeatMap ? lastSwingIndex : prevSwingIndex,
-             binLow,
-             transparentNA,
-             0,
-             bgcolor = showProfile or showHeatMap ? color.from_gradient(volumeRatio, 0, 1, color.new(swingMainColor, 90), color.new(volumeRatio == 1 and showPOC ? pocColor : swingMainColor, 50)) : transparentNA,
-             text = showHeatMap ? "" : volumeRatio == 1 ? str.tostring(volumeBins.max(), format.volume) : ""
-        ))
+        for bb in f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), volumeBins.max(), swingMainColor)
+            profileBoxes.push(bb)
 
         if k == 0
             profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
