@@ -2506,6 +2506,9 @@ type SwingData
 
 var highSwing = SwingData.new(na, na)
 var lowSwing  = SwingData.new(na, na)
+// One-behind swing points, so the Swing Fib can anchor to the second-to-last swing
+var prevHighSwing = SwingData.new(na, na)
+var prevLowSwing  = SwingData.new(na, na)
 
 // Direction flag: true = down move, false = up move
 var isDownMove = false
@@ -2521,13 +2524,17 @@ if high == highestSwingHigh
 if low == lowestSwingLow
     isDownMove := false
 
-// Store completed swing high
+// Store completed swing high (keeping the prior one as second-to-last)
 if high[1] == highestSwingHigh[1] and high < highestSwingHigh
+    prevHighSwing.index := highSwing.index
+    prevHighSwing.price := highSwing.price
     highSwing.index := bar_index[1]
     highSwing.price := high[1]
 
-// Store completed swing low
+// Store completed swing low (keeping the prior one as second-to-last)
 if low[1] == lowestSwingLow[1] and low > lowestSwingLow
+    prevLowSwing.index := lowSwing.index
+    prevLowSwing.price := lowSwing.price
     lowSwing.index := bar_index[1]
     lowSwing.price := low[1]
 
@@ -2680,17 +2687,25 @@ sf_draw() =>
     true
 
 if sfShow and barstate.isconfirmed
-    bool sf_valid = not na(highSwing.price) and not na(lowSwing.price) and not na(highSwing.index) and not na(lowSwing.index) and math.abs(highSwing.price - lowSwing.price) > 0
+    // Anchor to the SECOND-TO-LAST swing leg: whichever pivot is the most recent
+    // (later index) is replaced by the one-behind pivot on that side, so the fib
+    // sits on the previous completed swing rather than the one still forming.
+    bool  latestIsHigh = highSwing.index > lowSwing.index
+    float aHi    = latestIsHigh ? prevHighSwing.price : highSwing.price
+    int   aHiBar = latestIsHigh ? prevHighSwing.index : highSwing.index
+    float aLo    = latestIsHigh ? lowSwing.price : prevLowSwing.price
+    int   aLoBar = latestIsHigh ? lowSwing.index : prevLowSwing.index
+    bool sf_valid = not na(aHi) and not na(aLo) and not na(aHiBar) and not na(aLoBar) and math.abs(aHi - aLo) > 0
 
     // New swing → re-anchor levels and reset the pending touch (stats stay cumulative)
-    if sf_valid and (highSwing.index != sf_last_hi_bar or lowSwing.index != sf_last_lo_bar)
-        sf_last_hi_bar := highSwing.index
-        sf_last_lo_bar := lowSwing.index
-        sf_hi     := highSwing.price
-        sf_lo     := lowSwing.price
-        sf_hi_bar := highSwing.index
-        sf_lo_bar := lowSwing.index
-        sf_is_up  := highSwing.index > lowSwing.index
+    if sf_valid and (aHiBar != sf_last_hi_bar or aLoBar != sf_last_lo_bar)
+        sf_last_hi_bar := aHiBar
+        sf_last_lo_bar := aLoBar
+        sf_hi     := aHi
+        sf_lo     := aLo
+        sf_hi_bar := aHiBar
+        sf_lo_bar := aLoBar
+        sf_is_up  := aHiBar > aLoBar
         sf_pend_bar := na
         sf_draw()
 
