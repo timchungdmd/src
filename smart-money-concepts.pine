@@ -2687,18 +2687,21 @@ sf_draw() =>
     true
 
 if sfShow and barstate.isconfirmed
-    // Anchor to the SECOND-TO-LAST swing leg: whichever pivot is the most recent
-    // (later index) is replaced by the one-behind pivot on that side, so the fib
-    // sits on the previous completed swing rather than the one still forming.
-    bool  latestIsHigh = highSwing.index > lowSwing.index
-    float aHi    = latestIsHigh ? prevHighSwing.price : highSwing.price
-    int   aHiBar = latestIsHigh ? prevHighSwing.index : highSwing.index
-    float aLo    = latestIsHigh ? lowSwing.price : prevLowSwing.price
-    int   aLoBar = latestIsHigh ? lowSwing.index : prevLowSwing.index
+    // Anchor to the zigzag's PREVIOUS high/low swing (second-to-last swing).
+    float aHi    = prevHighSwing.price
+    int   aHiBar = prevHighSwing.index
+    float aLo    = prevLowSwing.price
+    int   aLoBar = prevLowSwing.index
     bool sf_valid = not na(aHi) and not na(aLo) and not na(aHiBar) and not na(aLoBar) and math.abs(aHi - aLo) > 0
 
-    // New swing → re-anchor levels and reset the pending touch (stats stay cumulative)
-    if sf_valid and (aHiBar != sf_last_hi_bar or aLoBar != sf_last_lo_bar)
+    // Anti-repaint gate: only re-anchor once this swing is at least 1.5x the size
+    // of the AUTO FIB AI swing; otherwise hold the current levels (no repaint).
+    float sfSwingSize = math.abs(aHi - aLo)
+    float aiSwingSize = fib_active and not na(fib_hi) and not na(fib_lo) ? math.abs(fib_hi - fib_lo) : 0.0
+    bool  sfBigEnough = aiSwingSize > 0 ? sfSwingSize >= 1.5 * aiSwingSize : true
+
+    // New qualifying swing → re-anchor levels and reset the pending touch (stats stay cumulative)
+    if sf_valid and sfBigEnough and (aHiBar != sf_last_hi_bar or aLoBar != sf_last_lo_bar)
         sf_last_hi_bar := aHiBar
         sf_last_lo_bar := aLoBar
         sf_hi     := aHi
