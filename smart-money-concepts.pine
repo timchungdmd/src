@@ -228,12 +228,23 @@ f_draw_fib() =>
                        style=label.style_label_left,
                        color=color.new(#000000, 100),
                        textcolor=C_GREEN, size=10))
-    // Previous swing (faint) — the prior leg's retracement lines, no labels
+    // Previous swing — a full second fib retracement (dimmed, ratio labels only)
     if show_prev and prev_valid
-        int px1 = math.min(prev_hi_bar, prev_lo_bar)
+        int   px1 = math.min(prev_hi_bar, prev_lo_bar)
+        float prange = prev_hi - prev_lo
+        // 0 and 1 base lines
+        array.push(fib_lines, line.new(px1, prev_is_up ? prev_hi : prev_lo, x2, prev_is_up ? prev_hi : prev_lo, color=color.new(prev_is_up ? C_BULL : C_BEAR, 55), width=1))
+        array.push(fib_lines, line.new(px1, prev_is_up ? prev_lo : prev_hi, x2, prev_is_up ? prev_lo : prev_hi, color=color.new(C_NEUTRAL, 70), width=1))
+        // retracement levels
         for i = 0 to 4
-            float plp = prev_is_up ? prev_hi - (prev_hi - prev_lo) * array.get(FIB_R, i) : prev_lo + (prev_hi - prev_lo) * array.get(FIB_R, i)
-            array.push(fib_lines, line.new(px1, plp, x2, plp, color=color.new(C_DIM, 75), width=1, style=line.style_dotted))
+            float plp = prev_is_up ? prev_hi - prange * array.get(FIB_R, i) : prev_lo + prange * array.get(FIB_R, i)
+            array.push(fib_lines, line.new(px1, plp, x2, plp, color=color.new(C_DIM, 60), width=1, style=line.style_dotted))
+            array.push(fib_labels, label.new(x2, plp, str.tostring(array.get(FIB_R, i), "#.###") + " ·prev", style=label.style_label_left, color=color.new(#000000, 100), textcolor=C_DIM, size=8))
+        // extension levels
+        if show_ext
+            for i = 0 to 1
+                float pep = prev_is_up ? prev_hi - prange * array.get(FIB_E, i) : prev_lo + prange * array.get(FIB_E, i)
+                array.push(fib_lines, line.new(px1, pep, x2, pep, color=color.new(C_GREEN, 78), width=1, style=line.style_dashed))
     true
 
 
