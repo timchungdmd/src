@@ -2506,9 +2506,6 @@ type SwingData
 
 var highSwing = SwingData.new(na, na)
 var lowSwing  = SwingData.new(na, na)
-// One-behind swing points, so the Swing Fib can anchor to the second-to-last swing
-var prevHighSwing = SwingData.new(na, na)
-var prevLowSwing  = SwingData.new(na, na)
 
 // Direction flag: true = down move, false = up move
 var isDownMove = false
@@ -2524,17 +2521,13 @@ if high == highestSwingHigh
 if low == lowestSwingLow
     isDownMove := false
 
-// Store completed swing high (keeping the prior one as second-to-last)
+// Store completed swing high
 if high[1] == highestSwingHigh[1] and high < highestSwingHigh
-    prevHighSwing.index := highSwing.index
-    prevHighSwing.price := highSwing.price
     highSwing.index := bar_index[1]
     highSwing.price := high[1]
 
-// Store completed swing low (keeping the prior one as second-to-last)
+// Store completed swing low
 if low[1] == lowestSwingLow[1] and low > lowestSwingLow
-    prevLowSwing.index := lowSwing.index
-    prevLowSwing.price := lowSwing.price
     lowSwing.index := bar_index[1]
     lowSwing.price := low[1]
 
@@ -2636,11 +2629,11 @@ if barstate.islast
 
 
 // ── SWING FIB + BOUNCE STATS ────────────────────────────────────────────────
-// Fibonacci retracement on the Swing Profile's active swing (highSwing/lowSwing),
-// with per-level touch/bounce grading measured exactly like the AUTO FIB AI
-// engine above: a touch is registered within tolerance, then graded as a bounce
-// (price moved away), a break (price closed through), or a timeout. Bounce counts
-// are cumulative across swings, shown per level. Off by default (no cost unless on).
+// Fibonacci retracement on the SAME swing the volume profile is drawn on
+// (highSwing/lowSwing). Orientation follows the move: if price went DOWN, 0.00
+// sits at the bottom and 1 at the top; if price went UP, 0.00 at the top and 1 at
+// the bottom. Levels run 0 → 1.618 (retracement + extension). Per-level touch/
+// bounce grading works like the AUTO FIB AI engine. Off by default.
 sfShow        = input.bool(false, "Swing Fib + Bounce Count", group = "Swing Fib")
 sfColor       = input.color(color.aqua, "Level Color", group = "Swing Fib")
 sfTouchTol    = input.float(0.2, "Touch Tolerance (×ATR)",  minval = 0.05, maxval = 1.0, step = 0.05, group = "Swing Fib")
@@ -2648,9 +2641,9 @@ sfBreakBuf    = input.float(0.3, "Break Buffer (×ATR)",     minval = 0.05, maxv
 sfBounceAtr   = input.float(1.0, "Bounce Distance (×ATR)",  minval = 0.3,  maxval = 5.0, step = 0.1,  group = "Swing Fib")
 sfOutcomeBars = input.int(10, "Outcome Window (bars)", minval = 3, maxval = 50, group = "Swing Fib")
 
-var float[] SF_R          = array.from(0.236, 0.382, 0.5, 0.618, 0.786)
-var int[]   sf_touches    = array.new<int>(5, 0)
-var int[]   sf_bounces    = array.new<int>(5, 0)
+var float[] SF_R          = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
+var int[]   sf_touches    = array.new<int>(9, 0)
+var int[]   sf_bounces    = array.new<int>(9, 0)
 var int     sf_pend_bar   = na
 var int     sf_pend_lvl   = na
 var float   sf_pend_price = na
@@ -2677,7 +2670,7 @@ sf_draw() =>
     sf_labels.clear()
     int x1 = math.min(sf_hi_bar, sf_lo_bar)
     int x2 = bar_index + 10
-    for i = 0 to 4
+    for i = 0 to array.size(SF_R) - 1
         float lp = sf_lvl_price(i)
         sf_lines.push(line.new(x1, lp, x2, lp, color = color.new(sfColor, 20), style = line.style_dotted))
         int t = array.get(sf_touches, i)
@@ -2687,21 +2680,15 @@ sf_draw() =>
     true
 
 if sfShow and barstate.isconfirmed
-    // Anchor to the zigzag's PREVIOUS high/low swing (second-to-last swing).
-    float aHi    = prevHighSwing.price
-    int   aHiBar = prevHighSwing.index
-    float aLo    = prevLowSwing.price
-    int   aLoBar = prevLowSwing.index
+    // Anchor to the current swing — the same leg the volume profile is drawn on.
+    float aHi    = highSwing.price
+    int   aHiBar = highSwing.index
+    float aLo    = lowSwing.price
+    int   aLoBar = lowSwing.index
     bool sf_valid = not na(aHi) and not na(aLo) and not na(aHiBar) and not na(aLoBar) and math.abs(aHi - aLo) > 0
 
-    // Anti-repaint gate: only re-anchor once this swing is at least 1.5x the size
-    // of the AUTO FIB AI swing; otherwise hold the current levels (no repaint).
-    float sfSwingSize = math.abs(aHi - aLo)
-    float aiSwingSize = fib_active and not na(fib_hi) and not na(fib_lo) ? math.abs(fib_hi - fib_lo) : 0.0
-    bool  sfBigEnough = aiSwingSize > 0 ? sfSwingSize >= 1.5 * aiSwingSize : true
-
-    // New qualifying swing → re-anchor levels and reset the pending touch (stats stay cumulative)
-    if sf_valid and sfBigEnough and (aHiBar != sf_last_hi_bar or aLoBar != sf_last_lo_bar)
+    // New swing → re-anchor levels and reset the pending touch (stats stay cumulative)
+    if sf_valid and (aHiBar != sf_last_hi_bar or aLoBar != sf_last_lo_bar)
         sf_last_hi_bar := aHiBar
         sf_last_lo_bar := aLoBar
         sf_hi     := aHi
@@ -2729,7 +2716,7 @@ if sfShow and barstate.isconfirmed
     if sf_valid and na(sf_pend_bar)
         int   best_i = na
         float best_d = sfTouchTol * atr_raw
-        for i = 0 to 4
+        for i = 0 to array.size(SF_R) - 1
             float lp = sf_lvl_price(i)
             float d = sf_is_up ? math.abs(low - lp) : math.abs(high - lp)
             bool correct_side = sf_is_up ? close > lp : close < lp
