@@ -175,7 +175,9 @@ f_lvl_price(int i) =>
 
 f_ext_price(int i) =>
     float r = array.get(FIB_E, i)
-    fib_is_up ? fib_hi + (fib_hi - fib_lo) * (r - 1.0) : fib_lo - (fib_hi - fib_lo) * (r - 1.0)
+    // Same progression as the retracement levels, so 1.272/1.618 continue PAST
+    // the 1 level (beyond the far end of the swing), not off the 0 side.
+    fib_is_up ? fib_hi - (fib_hi - fib_lo) * r : fib_lo + (fib_hi - fib_lo) * r
 
 f_clear_fib() =>
     if array.size(fib_lines) > 0
@@ -299,7 +301,7 @@ if barstate.isconfirmed
 
     // ── EXTENSION TARGET TRACKING
     if fib_active and na(extp_bar)
-        bool broke_extreme = fib_is_up ? close > fib_hi + break_buf * atr_raw : close < fib_lo - break_buf * atr_raw
+        bool broke_extreme = fib_is_up ? close < fib_lo - break_buf * atr_raw : close > fib_hi + break_buf * atr_raw
         if broke_extreme
             extp_bar  := bar_index
             extp_t1   := f_ext_price(0)
@@ -308,8 +310,8 @@ if barstate.isconfirmed
             ext_attempts += 1
 
     if not na(extp_bar)
-        bool hit1 = fib_is_up ? high >= extp_t1 : low <= extp_t1
-        bool hit2 = fib_is_up ? high >= extp_t2 : low <= extp_t2
+        bool hit1 = fib_is_up ? low <= extp_t1 : high >= extp_t1
+        bool hit2 = fib_is_up ? low <= extp_t2 : high >= extp_t2
         if hit1 and not extp_hit1
             ext_hit_1 += 1
             extp_hit1 := true
