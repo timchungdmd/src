@@ -2746,6 +2746,11 @@ if sfShow
     if barstate.islast and not na(sf_hi)
         sf_draw()
 
+// TEMP DEBUG — plots aren't subject to the 500-line cap. If these fuchsia/lime
+// lines appear, sf_hi/sf_lo ARE set and the fib lines are being evicted.
+plot(sfShow ? sf_hi : na, "DBG sf_hi", color = color.fuchsia, linewidth = 2)
+plot(sfShow ? sf_lo : na, "DBG sf_lo", color = color.lime, linewidth = 2)
+
 
 // Smoothing MA inputs
 GRP = "Moving Average"
