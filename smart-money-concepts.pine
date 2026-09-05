@@ -109,9 +109,6 @@ ext_window  = input.int(40, "Extension Window (bars)", minval=10, maxval=200, gr
 
 show_ext    = input.bool(true, "Show Extension Targets", group=GRP_VIS)
 show_stats  = input.bool(true, "Per-Level Stat Labels", group=GRP_VIS)
-show_parent = input.bool(false, "Show Parent Swing Fib", group=GRP_VIS)
-parent_mult = input.int(3, "Parent Swing Multiplier", minval=2, maxval=10, group=GRP_VIS,
-              tooltip="Parent swing uses Pivot Leg × this multiplier (higher-degree pivots). Drawn only when it fully contains the current swing.")
 
 show_hud = input.bool(true, "Show Dashboard", group=GRP_HUD)
 hud_pos  = input.string("Top Right", "Position",
@@ -121,8 +118,6 @@ hud_pos  = input.string("Top Right", "Position",
 atr_raw = ta.atr(14)
 fib_ph = ta.pivothigh(high, pivot_leg, pivot_leg)
 fib_pl = ta.pivotlow(low,  pivot_leg, pivot_leg)
-par_ph = ta.pivothigh(high, pivot_leg * parent_mult, pivot_leg * parent_mult)
-par_pl = ta.pivotlow(low,  pivot_leg * parent_mult, pivot_leg * parent_mult)
 
 
 // FIB LEVELS
@@ -143,18 +138,6 @@ var float fib_hi      = na
 var float fib_lo      = na
 var int   fib_hi_bar  = na
 var int   fib_lo_bar  = na
-
-// Parent (higher-degree) swing — bigger-lookback pivots, drawn when it contains the current swing
-var bool  par_valid  = false
-var bool  par_is_up  = false
-var float par_hi     = na
-var float par_lo     = na
-var int   par_hi_bar = na
-var int   par_lo_bar = na
-var float last_par_ph = na
-var int   last_par_ph_bar = na
-var float last_par_pl = na
-var int   last_par_pl_bar = na
 
 // Most recent confirmed pivots
 var float last_ph = na
@@ -236,16 +219,6 @@ f_draw_fib() =>
                        style=label.style_label_left,
                        color=color.new(#000000, 100),
                        textcolor=C_GREEN, size=10))
-    // Parent (higher-degree) swing — dimmed fib, only when it contains the current swing
-    if show_parent and par_valid and par_hi >= fib_hi and par_lo <= fib_lo
-        int   qx1 = math.min(par_hi_bar, par_lo_bar)
-        float qrange = par_hi - par_lo
-        array.push(fib_lines, line.new(qx1, par_is_up ? par_hi : par_lo, x2, par_is_up ? par_hi : par_lo, color=color.new(par_is_up ? C_BULL : C_BEAR, 45), width=2))
-        array.push(fib_lines, line.new(qx1, par_is_up ? par_lo : par_hi, x2, par_is_up ? par_lo : par_hi, color=color.new(C_NEUTRAL, 60), width=1))
-        for i = 0 to 4
-            float qlp = par_is_up ? par_hi - qrange * array.get(FIB_R, i) : par_lo + qrange * array.get(FIB_R, i)
-            array.push(fib_lines, line.new(qx1, qlp, x2, qlp, color=color.new(C_AMBER, 45), width=1, style=line.style_dashed))
-            array.push(fib_labels, label.new(x2, qlp, str.tostring(array.get(FIB_R, i), "#.###") + " ·P", style=label.style_label_left, color=color.new(#000000, 100), textcolor=C_AMBER, size=9))
     true
 
 
@@ -274,27 +247,6 @@ if barstate.isconfirmed
             extp_bar   := na
             extp_hit1  := false
             f_draw_fib()
-
-    // Parent (higher-degree) swing: track bigger-lookback pivots; redraw when it changes
-    bool par_rebuilt = false
-    if not na(par_ph)
-        last_par_ph     := par_ph
-        last_par_ph_bar := bar_index - pivot_leg * parent_mult
-        par_rebuilt := true
-    if not na(par_pl)
-        last_par_pl     := par_pl
-        last_par_pl_bar := bar_index - pivot_leg * parent_mult
-        par_rebuilt := true
-    if par_rebuilt and not na(last_par_ph) and not na(last_par_pl)
-        if last_par_ph_bar != par_hi_bar or last_par_pl_bar != par_lo_bar
-            par_is_up  := last_par_ph_bar > last_par_pl_bar
-            par_hi     := last_par_ph
-            par_lo     := last_par_pl
-            par_hi_bar := last_par_ph_bar
-            par_lo_bar := last_par_pl_bar
-            par_valid  := true
-            if show_parent and fib_active
-                f_draw_fib()
 
     if fib_active and not na(pend_bar)
         float lv = pend_price
