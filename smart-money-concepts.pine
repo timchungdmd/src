@@ -2640,35 +2640,54 @@ if barstate.islast
 // ── SWING FIB (previous swing) ──────────────────────────────────────────────
 // Fibonacci on the swing JUST BEFORE the current one (the leg preceding the
 // current zigzag leg). Orientation: downward slope → 1 at top / 0 at bottom;
-// upward slope → 0 at top / 1 at bottom. Fully independent of the AUTO FIB AI
-// engine (own inputs, own line/label arrays) so the two never interfere. Off by default.
-sfShow   = input.bool(false, "Show Previous-Swing Fib", group = "Swing Fib")
-sfColor  = input.color(color.aqua, "Level Color", group = "Swing Fib")
-sfExtend = input.bool(true, "Include 1.272 / 1.618", group = "Swing Fib")
+// upward slope → 0 at top / 1 at bottom. Per-level touch/bounce grading like the
+// AUTO FIB AI engine, but fully independent of it (own inputs and line/label
+// arrays), so the two never interfere. Off by default.
+sfShow      = input.bool(false, "Show Previous-Swing Fib", group = "Swing Fib")
+sfColor     = input.color(color.aqua, "Level Color", group = "Swing Fib")
+sfExtend    = input.bool(true, "Include 1.272 / 1.618", group = "Swing Fib")
+sfTouchTol  = input.float(0.2, "Touch Tolerance (×ATR)", minval = 0.05, maxval = 1.0, step = 0.05, group = "Swing Fib")
+sfBreakBuf  = input.float(0.3, "Break Buffer (×ATR)", minval = 0.05, maxval = 1.5, step = 0.05, group = "Swing Fib")
+sfBounceAtr = input.float(1.0, "Bounce Distance (×ATR)", minval = 0.3, maxval = 5.0, step = 0.1, group = "Swing Fib")
+sfOutcome   = input.int(10, "Outcome Window (bars)", minval = 3, maxval = 50, group = "Swing Fib")
 
-var float[] SF_R      = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
-var line[]  sf_lines  = array.new<line>()
-var label[] sf_labels = array.new<label>()
+var float[] SF_R       = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
+var int[]   sf_touches = array.new<int>(9, 0)
+var int[]   sf_bounces = array.new<int>(9, 0)
+var line[]  sf_lines   = array.new<line>()
+var label[] sf_labels  = array.new<label>()
+var bool    sf_is_up   = false
+var float   sf_hi      = na
+var float   sf_lo      = na
+var int     sf_hi_bar  = na
+var int     sf_lo_bar  = na
 var int     sf_seen_hi = na
 var int     sf_seen_lo = na
+var int     sf_pend_bar   = na
+var int     sf_pend_lvl   = na
+var float   sf_pend_price = na
 
-sf_draw(float aHi, int aHiBar, float aLo, int aLoBar) =>
+sf_lvl(int i) =>
+    float r = array.get(SF_R, i)
+    sf_is_up ? sf_hi - (sf_hi - sf_lo) * r : sf_lo + (sf_hi - sf_lo) * r
+
+sf_draw() =>
     for l in sf_lines
         line.delete(l)
     sf_lines.clear()
     for lb in sf_labels
         label.delete(lb)
     sf_labels.clear()
-    bool  isUp = aHiBar > aLoBar
-    float rng  = aHi - aLo
-    int   x1   = math.min(aHiBar, aLoBar)
-    int   x2   = bar_index + 10
-    int   last = sfExtend ? array.size(SF_R) - 1 : 6
+    int x1   = math.min(sf_hi_bar, sf_lo_bar)
+    int x2   = bar_index + 10
+    int last = sfExtend ? array.size(SF_R) - 1 : 6
     for i = 0 to last
-        float r  = array.get(SF_R, i)
-        float lp = isUp ? aHi - rng * r : aLo + rng * r
+        float lp = sf_lvl(i)
         sf_lines.push(line.new(x1, lp, x2, lp, color = color.new(sfColor, 20), width = 1, style = line.style_dotted))
-        sf_labels.push(label.new(x2, lp, str.tostring(r, "#.###"), style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = 8))
+        int t = array.get(sf_touches, i)
+        int b = array.get(sf_bounces, i)
+        string s = str.tostring(array.get(SF_R, i), "#.###") + (t > 0 ? "  |  " + str.tostring(math.round(b / float(t) * 100)) + "% bounced (n=" + str.tostring(t) + ")" : "")
+        sf_labels.push(label.new(x2, lp, s, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = 8))
     true
 
 if sfShow and barstate.isconfirmed
@@ -2679,11 +2698,53 @@ if sfShow and barstate.isconfirmed
     int   aHiBar = latestIsHigh ? prevHighSwing.index : highSwing.index
     float aLo    = latestIsHigh ? lowSwing.price : prevLowSwing.price
     int   aLoBar = latestIsHigh ? lowSwing.index : prevLowSwing.index
-    bool  valid = not na(aHi) and not na(aLo) and not na(aHiBar) and not na(aLoBar) and aHi != aLo
+    bool  valid  = not na(aHi) and not na(aLo) and not na(aHiBar) and not na(aLoBar) and aHi != aLo
+    int   last   = sfExtend ? array.size(SF_R) - 1 : 6
+
+    // New previous-swing → re-anchor and reset the pending touch (stats stay cumulative)
     if valid and (aHiBar != sf_seen_hi or aLoBar != sf_seen_lo)
         sf_seen_hi := aHiBar
         sf_seen_lo := aLoBar
-        sf_draw(aHi, aHiBar, aLo, aLoBar)
+        sf_hi     := aHi
+        sf_lo     := aLo
+        sf_hi_bar := aHiBar
+        sf_lo_bar := aLoBar
+        sf_is_up  := aHiBar > aLoBar
+        sf_pend_bar := na
+        sf_draw()
+
+    // Grade an open touch: bounce / break / timeout
+    if valid and not na(sf_pend_bar)
+        float lv = sf_pend_price
+        bool broke     = sf_is_up ? close < lv - sfBreakBuf * atr_raw : close > lv + sfBreakBuf * atr_raw
+        bool bounced   = sf_is_up ? (close - lv) >= sfBounceAtr * atr_raw : (lv - close) >= sfBounceAtr * atr_raw
+        bool timed_out = (bar_index - sf_pend_bar) >= sfOutcome
+        if broke or bounced or timed_out
+            array.set(sf_touches, sf_pend_lvl, array.get(sf_touches, sf_pend_lvl) + 1)
+            if bounced
+                array.set(sf_bounces, sf_pend_lvl, array.get(sf_bounces, sf_pend_lvl) + 1)
+            sf_pend_bar := na
+            sf_draw()
+
+    // Look for a new touch on the nearest level (correct side, within tolerance)
+    if valid and na(sf_pend_bar)
+        int   best_i = na
+        float best_d = sfTouchTol * atr_raw
+        for i = 0 to last
+            float lp = sf_lvl(i)
+            float d = sf_is_up ? math.abs(low - lp) : math.abs(high - lp)
+            bool correct_side = sf_is_up ? close > lp : close < lp
+            if d <= best_d and correct_side
+                best_d := d
+                best_i := i
+        if not na(best_i)
+            sf_pend_bar   := bar_index
+            sf_pend_lvl   := best_i
+            sf_pend_price := sf_lvl(best_i)
+
+    // Keep the levels extended to the right edge (redraw on the last bar)
+    if valid and barstate.islast
+        sf_draw()
 
 
 // Smoothing MA inputs
