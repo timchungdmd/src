@@ -2742,9 +2742,16 @@ if sfShow and barstate.isconfirmed
             sf_pend_lvl   := best_i
             sf_pend_price := sf_lvl(best_i)
 
-    // Keep the levels extended to the right edge (redraw on the last bar)
-    if valid and barstate.islast
-        sf_draw()
+// Refresh on the forming bar so the levels stay extended to the right edge
+// (outside the isconfirmed gate, which is false on the live bar).
+if sfShow and barstate.islast and not na(sf_hi)
+    sf_draw()
+
+// TEMP DEBUG — shows the swing values on the last bar. Remove once confirmed working.
+var label sf_dbg = na
+if sfShow and barstate.islast
+    label.delete(sf_dbg)
+    sf_dbg := label.new(bar_index, high, "SF debug\nH=" + str.tostring(highSwing.price) + "  L=" + str.tostring(lowSwing.price) + "\nprevH=" + str.tostring(prevHighSwing.price) + "  prevL=" + str.tostring(prevLowSwing.price) + "\nsf_hi=" + str.tostring(sf_hi) + "  sf_lo=" + str.tostring(sf_lo), style = label.style_label_left, color = color.orange, textcolor = color.black, size = size.normal)
 
 
 // Smoothing MA inputs
