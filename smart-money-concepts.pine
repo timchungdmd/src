@@ -2690,68 +2690,61 @@ sf_draw() =>
         sf_labels.push(label.new(x2, lp, s, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = 8))
     true
 
-if sfShow and barstate.isconfirmed
-    // The swing just before the current leg: keep the earlier-side pivot and
-    // swap the most-recent pivot for the one-behind pivot on that side.
-    bool  latestIsHigh = highSwing.index > lowSwing.index
-    float aHi    = latestIsHigh ? prevHighSwing.price : highSwing.price
-    int   aHiBar = latestIsHigh ? prevHighSwing.index : highSwing.index
-    float aLo    = latestIsHigh ? lowSwing.price : prevLowSwing.price
-    int   aLoBar = latestIsHigh ? lowSwing.index : prevLowSwing.index
-    bool  valid  = not na(aHi) and not na(aLo) and not na(aHiBar) and not na(aLoBar) and aHi != aLo
-    int   last   = sfExtend ? array.size(SF_R) - 1 : 6
+// Anchor to the swing just before the current leg — computed EVERY bar (not
+// gated by isconfirmed), so it is set even on the live/forming bar. Keep the
+// earlier-side pivot and swap the most-recent pivot for the one-behind on that side.
+sf_latestHi = highSwing.index > lowSwing.index
+sf_aHi    = sf_latestHi ? prevHighSwing.price : highSwing.price
+sf_aHiBar = sf_latestHi ? prevHighSwing.index : highSwing.index
+sf_aLo    = sf_latestHi ? lowSwing.price : prevLowSwing.price
+sf_aLoBar = sf_latestHi ? lowSwing.index : prevLowSwing.index
+sf_valid  = not na(sf_aHi) and not na(sf_aLo) and not na(sf_aHiBar) and not na(sf_aLoBar) and sf_aHi != sf_aLo
+sf_last   = sfExtend ? array.size(SF_R) - 1 : 6
 
-    // New previous-swing → re-anchor and reset the pending touch (stats stay cumulative)
-    if valid and (aHiBar != sf_seen_hi or aLoBar != sf_seen_lo)
-        sf_seen_hi := aHiBar
-        sf_seen_lo := aLoBar
-        sf_hi     := aHi
-        sf_lo     := aLo
-        sf_hi_bar := aHiBar
-        sf_lo_bar := aLoBar
-        sf_is_up  := aHiBar > aLoBar
+if sfShow
+    // Re-anchor when the previous leg changes (reset pending; stats stay cumulative)
+    if sf_valid and (sf_aHiBar != sf_seen_hi or sf_aLoBar != sf_seen_lo)
+        sf_seen_hi := sf_aHiBar
+        sf_seen_lo := sf_aLoBar
+        sf_hi     := sf_aHi
+        sf_lo     := sf_aLo
+        sf_hi_bar := sf_aHiBar
+        sf_lo_bar := sf_aLoBar
+        sf_is_up  := sf_aHiBar > sf_aLoBar
         sf_pend_bar := na
         sf_draw()
 
-    // Grade an open touch: bounce / break / timeout
-    if valid and not na(sf_pend_bar)
-        float lv = sf_pend_price
-        bool broke     = sf_is_up ? close < lv - sfBreakBuf * atr_raw : close > lv + sfBreakBuf * atr_raw
-        bool bounced   = sf_is_up ? (close - lv) >= sfBounceAtr * atr_raw : (lv - close) >= sfBounceAtr * atr_raw
-        bool timed_out = (bar_index - sf_pend_bar) >= sfOutcome
-        if broke or bounced or timed_out
-            array.set(sf_touches, sf_pend_lvl, array.get(sf_touches, sf_pend_lvl) + 1)
-            if bounced
-                array.set(sf_bounces, sf_pend_lvl, array.get(sf_bounces, sf_pend_lvl) + 1)
-            sf_pend_bar := na
-            sf_draw()
+    // Grade touches on confirmed bars only
+    if barstate.isconfirmed and sf_valid and not na(sf_hi)
+        if not na(sf_pend_bar)
+            float lv = sf_pend_price
+            bool broke     = sf_is_up ? close < lv - sfBreakBuf * atr_raw : close > lv + sfBreakBuf * atr_raw
+            bool bounced   = sf_is_up ? (close - lv) >= sfBounceAtr * atr_raw : (lv - close) >= sfBounceAtr * atr_raw
+            bool timed_out = (bar_index - sf_pend_bar) >= sfOutcome
+            if broke or bounced or timed_out
+                array.set(sf_touches, sf_pend_lvl, array.get(sf_touches, sf_pend_lvl) + 1)
+                if bounced
+                    array.set(sf_bounces, sf_pend_lvl, array.get(sf_bounces, sf_pend_lvl) + 1)
+                sf_pend_bar := na
+                sf_draw()
+        if na(sf_pend_bar)
+            int   best_i = na
+            float best_d = sfTouchTol * atr_raw
+            for i = 0 to sf_last
+                float lp = sf_lvl(i)
+                float d = sf_is_up ? math.abs(low - lp) : math.abs(high - lp)
+                bool correct_side = sf_is_up ? close > lp : close < lp
+                if d <= best_d and correct_side
+                    best_d := d
+                    best_i := i
+            if not na(best_i)
+                sf_pend_bar   := bar_index
+                sf_pend_lvl   := best_i
+                sf_pend_price := sf_lvl(best_i)
 
-    // Look for a new touch on the nearest level (correct side, within tolerance)
-    if valid and na(sf_pend_bar)
-        int   best_i = na
-        float best_d = sfTouchTol * atr_raw
-        for i = 0 to last
-            float lp = sf_lvl(i)
-            float d = sf_is_up ? math.abs(low - lp) : math.abs(high - lp)
-            bool correct_side = sf_is_up ? close > lp : close < lp
-            if d <= best_d and correct_side
-                best_d := d
-                best_i := i
-        if not na(best_i)
-            sf_pend_bar   := bar_index
-            sf_pend_lvl   := best_i
-            sf_pend_price := sf_lvl(best_i)
-
-// Refresh on the forming bar so the levels stay extended to the right edge
-// (outside the isconfirmed gate, which is false on the live bar).
-if sfShow and barstate.islast and not na(sf_hi)
-    sf_draw()
-
-// TEMP DEBUG — shows the swing values on the last bar. Remove once confirmed working.
-var label sf_dbg = na
-if sfShow and barstate.islast
-    label.delete(sf_dbg)
-    sf_dbg := label.new(bar_index, high, "SF debug\nH=" + str.tostring(highSwing.price) + "  L=" + str.tostring(lowSwing.price) + "\nprevH=" + str.tostring(prevHighSwing.price) + "  prevL=" + str.tostring(prevLowSwing.price) + "\nsf_hi=" + str.tostring(sf_hi) + "  sf_lo=" + str.tostring(sf_lo), style = label.style_label_left, color = color.orange, textcolor = color.black, size = size.normal)
+    // Keep the levels extended to the right edge
+    if barstate.islast and not na(sf_hi)
+        sf_draw()
 
 
 // Smoothing MA inputs
