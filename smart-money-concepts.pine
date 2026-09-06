@@ -2643,7 +2643,7 @@ if barstate.islast
 // upward slope → 0 at top / 1 at bottom. Per-level touch/bounce grading like the
 // AUTO FIB AI engine, but fully independent of it (own inputs and line/label
 // arrays), so the two never interfere. Off by default.
-sfShow      = input.bool(false, "Show Previous-Swing Fib", group = "Swing Fib")
+sfShow      = input.bool(true, "Show Previous-Swing Fib", group = "Swing Fib")
 sfColor     = input.color(color.aqua, "Level Color", group = "Swing Fib")
 sfExtend    = input.bool(true, "Include 1.272 / 1.618", group = "Swing Fib")
 sfTouchTol  = input.float(0.2, "Touch Tolerance (×ATR)", minval = 0.05, maxval = 1.0, step = 0.05, group = "Swing Fib")
@@ -2763,6 +2763,19 @@ plot(sfShow ? sf_v786 : na, "Swing Fib 0.786", color = sfColor)
 plot(sfShow ? sf_v1   : na, "Swing Fib 1",     color = sfColor)
 plot(sfShow and sfExtend ? sf_v127 : na, "Swing Fib 1.272", color = sfColor)
 plot(sfShow and sfExtend ? sf_v161 : na, "Swing Fib 1.618", color = sfColor)
+
+// TEMP DEBUG — always on (not gated by sfShow). Screenshot this label.
+var label sf_dbg = na
+if barstate.islast
+    label.delete(sf_dbg)
+    sf_dbg := label.new(bar_index, high,
+         "SF DEBUG\nsfShow=" + str.tostring(sfShow)
+         + "\nsf_valid=" + str.tostring(sf_valid)
+         + "\nsf_hi=" + str.tostring(sf_hi) + "  sf_lo=" + str.tostring(sf_lo)
+         + "\nsf_v0=" + str.tostring(sf_v0) + "  sf_v5=" + str.tostring(sf_v5)
+         + "\nHidx=" + str.tostring(highSwing.index) + "  Lidx=" + str.tostring(lowSwing.index)
+         + "\npHidx=" + str.tostring(prevHighSwing.index) + "  pLidx=" + str.tostring(prevLowSwing.index),
+         style = label.style_label_left, color = color.orange, textcolor = color.black, size = size.large)
 
 
 // Smoothing MA inputs
