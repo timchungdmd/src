@@ -2654,6 +2654,7 @@ sfOutcome   = input.int(10, "Outcome Window (bars)", minval = 3, maxval = 50, gr
 var float[] SF_R       = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
 var int[]   sf_touches = array.new<int>(9, 0)
 var int[]   sf_bounces = array.new<int>(9, 0)
+var line[]  sf_lines   = array.new<line>()
 var label[] sf_labels  = array.new<label>()
 var bool    sf_is_up   = false
 var float   sf_hi      = na
@@ -2671,13 +2672,18 @@ sf_lvl(int i) =>
     sf_is_up ? sf_hi - (sf_hi - sf_lo) * r : sf_lo + (sf_hi - sf_lo) * r
 
 sf_draw() =>
+    for l in sf_lines
+        line.delete(l)
+    sf_lines.clear()
     for lb in sf_labels
         label.delete(lb)
     sf_labels.clear()
+    int x1   = math.min(sf_hi_bar, sf_lo_bar)
     int x2   = bar_index + 10
     int last = sfExtend ? array.size(SF_R) - 1 : 6
     for i = 0 to last
         float lp = sf_lvl(i)
+        sf_lines.push(line.new(x1, lp, x2, lp, color = sfColor, width = 1, style = line.style_dotted))
         int t = array.get(sf_touches, i)
         int b = array.get(sf_bounces, i)
         string s = str.tostring(array.get(SF_R, i), "#.###") + (t > 0 ? "  |  " + str.tostring(math.round(b / float(t) * 100)) + "% bounced (n=" + str.tostring(t) + ")" : "")
@@ -2741,29 +2747,6 @@ if sfShow and sf_valid
     if barstate.islast and not na(sf_hi)
         sf_draw()
 
-// Fib level series (explicit, computed every bar) then plotted directly — no
-// function call and default style, matching the diagnostic plot that rendered.
-// Plots bypass the 500-line cap the other engines were exhausting.
-sf_rng  = sf_hi - sf_lo
-sf_v0   = sf_is_up ? sf_hi : sf_lo
-sf_v236 = sf_is_up ? sf_hi - sf_rng * 0.236 : sf_lo + sf_rng * 0.236
-sf_v382 = sf_is_up ? sf_hi - sf_rng * 0.382 : sf_lo + sf_rng * 0.382
-sf_v5   = sf_is_up ? sf_hi - sf_rng * 0.5   : sf_lo + sf_rng * 0.5
-sf_v618 = sf_is_up ? sf_hi - sf_rng * 0.618 : sf_lo + sf_rng * 0.618
-sf_v786 = sf_is_up ? sf_hi - sf_rng * 0.786 : sf_lo + sf_rng * 0.786
-sf_v1   = sf_is_up ? sf_lo : sf_hi
-sf_v127 = sf_is_up ? sf_hi - sf_rng * 1.272 : sf_lo + sf_rng * 1.272
-sf_v161 = sf_is_up ? sf_hi - sf_rng * 1.618 : sf_lo + sf_rng * 1.618
-
-plot(sfShow ? sf_v0   : na, "Swing Fib 0",     color = sfColor)
-plot(sfShow ? sf_v236 : na, "Swing Fib 0.236", color = sfColor)
-plot(sfShow ? sf_v382 : na, "Swing Fib 0.382", color = sfColor)
-plot(sfShow ? sf_v5   : na, "Swing Fib 0.5",   color = sfColor)
-plot(sfShow ? sf_v618 : na, "Swing Fib 0.618", color = sfColor)
-plot(sfShow ? sf_v786 : na, "Swing Fib 0.786", color = sfColor)
-plot(sfShow ? sf_v1   : na, "Swing Fib 1",     color = sfColor)
-plot(sfShow and sfExtend ? sf_v127 : na, "Swing Fib 1.272", color = sfColor)
-plot(sfShow and sfExtend ? sf_v161 : na, "Swing Fib 1.618", color = sfColor)
 
 
 // Smoothing MA inputs
