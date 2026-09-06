@@ -2740,18 +2740,29 @@ if sfShow
     if barstate.islast and not na(sf_hi)
         sf_draw()
 
-// Fib level plots. Rendered as plots (not line.new) so they bypass the 500-line
-// cap the other engines were exhausting. Stepline holds each level flat until the
-// anchored (previous) swing changes. Ratio + bounce% labels sit at the right edge.
-plot(sfShow and not na(sf_hi) ? sf_lvl(0) : na, "Swing Fib 0",     color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(1) : na, "Swing Fib 0.236", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(2) : na, "Swing Fib 0.382", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(3) : na, "Swing Fib 0.5",   color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(4) : na, "Swing Fib 0.618", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(5) : na, "Swing Fib 0.786", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(6) : na, "Swing Fib 1",     color = sfColor, style = plot.style_stepline)
-plot(sfShow and sfExtend and not na(sf_hi) ? sf_lvl(7) : na, "Swing Fib 1.272", color = sfColor, style = plot.style_stepline)
-plot(sfShow and sfExtend and not na(sf_hi) ? sf_lvl(8) : na, "Swing Fib 1.618", color = sfColor, style = plot.style_stepline)
+// Fib level series (explicit, computed every bar) then plotted directly — no
+// function call and default style, matching the diagnostic plot that rendered.
+// Plots bypass the 500-line cap the other engines were exhausting.
+sf_rng  = sf_hi - sf_lo
+sf_v0   = sf_is_up ? sf_hi : sf_lo
+sf_v236 = sf_is_up ? sf_hi - sf_rng * 0.236 : sf_lo + sf_rng * 0.236
+sf_v382 = sf_is_up ? sf_hi - sf_rng * 0.382 : sf_lo + sf_rng * 0.382
+sf_v5   = sf_is_up ? sf_hi - sf_rng * 0.5   : sf_lo + sf_rng * 0.5
+sf_v618 = sf_is_up ? sf_hi - sf_rng * 0.618 : sf_lo + sf_rng * 0.618
+sf_v786 = sf_is_up ? sf_hi - sf_rng * 0.786 : sf_lo + sf_rng * 0.786
+sf_v1   = sf_is_up ? sf_lo : sf_hi
+sf_v127 = sf_is_up ? sf_hi - sf_rng * 1.272 : sf_lo + sf_rng * 1.272
+sf_v161 = sf_is_up ? sf_hi - sf_rng * 1.618 : sf_lo + sf_rng * 1.618
+
+plot(sfShow ? sf_v0   : na, "Swing Fib 0",     color = sfColor)
+plot(sfShow ? sf_v236 : na, "Swing Fib 0.236", color = sfColor)
+plot(sfShow ? sf_v382 : na, "Swing Fib 0.382", color = sfColor)
+plot(sfShow ? sf_v5   : na, "Swing Fib 0.5",   color = sfColor)
+plot(sfShow ? sf_v618 : na, "Swing Fib 0.618", color = sfColor)
+plot(sfShow ? sf_v786 : na, "Swing Fib 0.786", color = sfColor)
+plot(sfShow ? sf_v1   : na, "Swing Fib 1",     color = sfColor)
+plot(sfShow and sfExtend ? sf_v127 : na, "Swing Fib 1.272", color = sfColor)
+plot(sfShow and sfExtend ? sf_v161 : na, "Swing Fib 1.618", color = sfColor)
 
 
 // Smoothing MA inputs
