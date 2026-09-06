@@ -109,6 +109,8 @@ ext_window  = input.int(40, "Extension Window (bars)", minval=10, maxval=200, gr
 
 show_ext    = input.bool(true, "Show Extension Targets", group=GRP_VIS)
 show_stats  = input.bool(true, "Per-Level Stat Labels", group=GRP_VIS)
+show_prev2  = input.bool(true, "Second (previous) Swing Fib", group=GRP_VIS)
+prev2_col   = input.color(color.new(#ff9800, 0), "Second Swing Color", group=GRP_VIS)
 
 show_hud = input.bool(true, "Show Dashboard", group=GRP_HUD)
 hud_pos  = input.string("Top Right", "Position",
@@ -138,6 +140,14 @@ var float fib_hi      = na
 var float fib_lo      = na
 var int   fib_hi_bar  = na
 var int   fib_lo_bar  = na
+
+// Second (previous) swing — the swing right before the current one
+var bool  p2_valid  = false
+var bool  p2_is_up  = false
+var float p2_hi     = na
+var float p2_lo     = na
+var int   p2_hi_bar = na
+var int   p2_lo_bar = na
 
 // Most recent confirmed pivots
 var float last_ph = na
@@ -219,6 +229,16 @@ f_draw_fib() =>
                        style=label.style_label_left,
                        color=color.new(#000000, 100),
                        textcolor=C_GREEN, size=10))
+    // Second (previous) swing fib — the swing right before the current one
+    if show_prev2 and p2_valid
+        int   qx1 = math.min(p2_hi_bar, p2_lo_bar)
+        float qrng = p2_hi - p2_lo
+        array.push(fib_lines, line.new(qx1, p2_is_up ? p2_hi : p2_lo, x2, p2_is_up ? p2_hi : p2_lo, color=color.new(prev2_col, 30), width=1))
+        array.push(fib_lines, line.new(qx1, p2_is_up ? p2_lo : p2_hi, x2, p2_is_up ? p2_lo : p2_hi, color=color.new(prev2_col, 55), width=1))
+        for i = 0 to 4
+            float qlp = p2_is_up ? p2_hi - qrng * array.get(FIB_R, i) : p2_lo + qrng * array.get(FIB_R, i)
+            array.push(fib_lines, line.new(qx1, qlp, x2, qlp, color=color.new(prev2_col, 45), width=1, style=line.style_dotted))
+            array.push(fib_labels, label.new(x2, qlp, str.tostring(array.get(FIB_R, i), "#.###"), style=label.style_label_left, color=color.new(#000000, 100), textcolor=prev2_col, size=9))
     true
 
 
@@ -237,6 +257,14 @@ if barstate.isconfirmed
 
     if rebuilt and not na(last_ph) and not na(last_pl)
         if math.abs(last_ph - last_pl) >= min_swing_atr * atr_raw
+            // Save the outgoing swing as the "second" (previous) swing
+            if fib_active and (last_ph_bar != fib_hi_bar or last_pl_bar != fib_lo_bar)
+                p2_hi     := fib_hi
+                p2_lo     := fib_lo
+                p2_hi_bar := fib_hi_bar
+                p2_lo_bar := fib_lo_bar
+                p2_is_up  := fib_is_up
+                p2_valid  := true
             fib_active := true
             fib_is_up  := last_ph_bar > last_pl_bar
             fib_hi     := last_ph
@@ -2508,9 +2536,6 @@ type SwingData
 
 var highSwing = SwingData.new(na, na)
 var lowSwing  = SwingData.new(na, na)
-// One-behind swing points, for the previous-swing fib
-var prevHighSwing = SwingData.new(na, na)
-var prevLowSwing  = SwingData.new(na, na)
 
 // Direction flag: true = down move, false = up move
 var isDownMove = false
@@ -2526,17 +2551,13 @@ if high == highestSwingHigh
 if low == lowestSwingLow
     isDownMove := false
 
-// Store completed swing high (prior one kept for the previous-swing fib)
+// Store completed swing high
 if high[1] == highestSwingHigh[1] and high < highestSwingHigh
-    prevHighSwing.index := highSwing.index
-    prevHighSwing.price := highSwing.price
     highSwing.index := bar_index[1]
     highSwing.price := high[1]
 
-// Store completed swing low (prior one kept for the previous-swing fib)
+// Store completed swing low
 if low[1] == lowestSwingLow[1] and low > lowestSwingLow
-    prevLowSwing.index := lowSwing.index
-    prevLowSwing.price := lowSwing.price
     lowSwing.index := bar_index[1]
     lowSwing.price := low[1]
 
@@ -2635,123 +2656,6 @@ if barstate.islast
          textalign = text.align_left)
 
     label.delete(dataLabel[1])
-
-
-// ── SWING FIB (previous swing) ──────────────────────────────────────────────
-// Fibonacci on the swing JUST BEFORE the current one (the leg preceding the
-// current zigzag leg). Orientation: downward slope → 1 at top / 0 at bottom;
-// upward slope → 0 at top / 1 at bottom. Per-level touch/bounce grading like the
-// AUTO FIB AI engine, but fully independent of it (own inputs and line/label
-// arrays), so the two never interfere. Off by default.
-sfShow      = input.bool(false, "Show Previous-Swing Fib", group = "Swing Fib")
-sfColor     = input.color(color.aqua, "Level Color", group = "Swing Fib")
-sfExtend    = input.bool(true, "Include 1.272 / 1.618", group = "Swing Fib")
-sfTouchTol  = input.float(0.2, "Touch Tolerance (×ATR)", minval = 0.05, maxval = 1.0, step = 0.05, group = "Swing Fib")
-sfBreakBuf  = input.float(0.3, "Break Buffer (×ATR)", minval = 0.05, maxval = 1.5, step = 0.05, group = "Swing Fib")
-sfBounceAtr = input.float(1.0, "Bounce Distance (×ATR)", minval = 0.3, maxval = 5.0, step = 0.1, group = "Swing Fib")
-sfOutcome   = input.int(10, "Outcome Window (bars)", minval = 3, maxval = 50, group = "Swing Fib")
-
-var float[] SF_R       = array.from(0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618)
-var int[]   sf_touches = array.new<int>(9, 0)
-var int[]   sf_bounces = array.new<int>(9, 0)
-var label[] sf_labels  = array.new<label>()
-var bool    sf_is_up   = false
-var float   sf_hi      = na
-var float   sf_lo      = na
-var int     sf_hi_bar  = na
-var int     sf_lo_bar  = na
-var int     sf_seen_hi = na
-var int     sf_seen_lo = na
-var int     sf_pend_bar   = na
-var int     sf_pend_lvl   = na
-var float   sf_pend_price = na
-
-sf_lvl(int i) =>
-    float r = array.get(SF_R, i)
-    sf_is_up ? sf_hi - (sf_hi - sf_lo) * r : sf_lo + (sf_hi - sf_lo) * r
-
-sf_draw() =>
-    for lb in sf_labels
-        label.delete(lb)
-    sf_labels.clear()
-    int x2   = bar_index + 10
-    int last = sfExtend ? array.size(SF_R) - 1 : 6
-    for i = 0 to last
-        float lp = sf_lvl(i)
-        int t = array.get(sf_touches, i)
-        int b = array.get(sf_bounces, i)
-        string s = str.tostring(array.get(SF_R, i), "#.###") + (t > 0 ? "  |  " + str.tostring(math.round(b / float(t) * 100)) + "% bounced (n=" + str.tostring(t) + ")" : "")
-        sf_labels.push(label.new(x2, lp, s, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = 8))
-    true
-
-// Anchor to the swing just before the current leg — computed EVERY bar (not
-// gated by isconfirmed), so it is set even on the live/forming bar. Keep the
-// earlier-side pivot and swap the most-recent pivot for the one-behind on that side.
-sf_latestHi = highSwing.index > lowSwing.index
-sf_aHi    = sf_latestHi ? prevHighSwing.price : highSwing.price
-sf_aHiBar = sf_latestHi ? prevHighSwing.index : highSwing.index
-sf_aLo    = sf_latestHi ? lowSwing.price : prevLowSwing.price
-sf_aLoBar = sf_latestHi ? lowSwing.index : prevLowSwing.index
-sf_valid  = not na(sf_aHi) and not na(sf_aLo) and not na(sf_aHiBar) and not na(sf_aLoBar) and sf_aHi != sf_aLo
-sf_last   = sfExtend ? array.size(SF_R) - 1 : 6
-
-if sfShow
-    // Re-anchor when the previous leg changes (reset pending; stats stay cumulative)
-    if sf_valid and (sf_aHiBar != sf_seen_hi or sf_aLoBar != sf_seen_lo)
-        sf_seen_hi := sf_aHiBar
-        sf_seen_lo := sf_aLoBar
-        sf_hi     := sf_aHi
-        sf_lo     := sf_aLo
-        sf_hi_bar := sf_aHiBar
-        sf_lo_bar := sf_aLoBar
-        sf_is_up  := sf_aHiBar > sf_aLoBar
-        sf_pend_bar := na
-        sf_draw()
-
-    // Grade touches on confirmed bars only
-    if barstate.isconfirmed and sf_valid and not na(sf_hi)
-        if not na(sf_pend_bar)
-            float lv = sf_pend_price
-            bool broke     = sf_is_up ? close < lv - sfBreakBuf * atr_raw : close > lv + sfBreakBuf * atr_raw
-            bool bounced   = sf_is_up ? (close - lv) >= sfBounceAtr * atr_raw : (lv - close) >= sfBounceAtr * atr_raw
-            bool timed_out = (bar_index - sf_pend_bar) >= sfOutcome
-            if broke or bounced or timed_out
-                array.set(sf_touches, sf_pend_lvl, array.get(sf_touches, sf_pend_lvl) + 1)
-                if bounced
-                    array.set(sf_bounces, sf_pend_lvl, array.get(sf_bounces, sf_pend_lvl) + 1)
-                sf_pend_bar := na
-                sf_draw()
-        if na(sf_pend_bar)
-            int   best_i = na
-            float best_d = sfTouchTol * atr_raw
-            for i = 0 to sf_last
-                float lp = sf_lvl(i)
-                float d = sf_is_up ? math.abs(low - lp) : math.abs(high - lp)
-                bool correct_side = sf_is_up ? close > lp : close < lp
-                if d <= best_d and correct_side
-                    best_d := d
-                    best_i := i
-            if not na(best_i)
-                sf_pend_bar   := bar_index
-                sf_pend_lvl   := best_i
-                sf_pend_price := sf_lvl(best_i)
-
-    // Keep the levels extended to the right edge
-    if barstate.islast and not na(sf_hi)
-        sf_draw()
-
-// Fib level plots. Rendered as plots (not line.new) so they bypass the 500-line
-// cap the other engines were exhausting. Stepline holds each level flat until the
-// anchored (previous) swing changes. Ratio + bounce% labels sit at the right edge.
-plot(sfShow and not na(sf_hi) ? sf_lvl(0) : na, "Swing Fib 0",     color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(1) : na, "Swing Fib 0.236", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(2) : na, "Swing Fib 0.382", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(3) : na, "Swing Fib 0.5",   color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(4) : na, "Swing Fib 0.618", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(5) : na, "Swing Fib 0.786", color = sfColor, style = plot.style_stepline)
-plot(sfShow and not na(sf_hi) ? sf_lvl(6) : na, "Swing Fib 1",     color = sfColor, style = plot.style_stepline)
-plot(sfShow and sfExtend and not na(sf_hi) ? sf_lvl(7) : na, "Swing Fib 1.272", color = sfColor, style = plot.style_stepline)
-plot(sfShow and sfExtend and not na(sf_hi) ? sf_lvl(8) : na, "Swing Fib 1.618", color = sfColor, style = plot.style_stepline)
 
 
 // Smoothing MA inputs
