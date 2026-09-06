@@ -2695,16 +2695,17 @@ sf_aLoBar = sf_latestHi ? lowSwing.index : prevLowSwing.index
 sf_valid  = not na(sf_aHi) and not na(sf_aLo) and not na(sf_aHiBar) and not na(sf_aLoBar) and sf_aHi != sf_aLo
 sf_last   = sfExtend ? array.size(SF_R) - 1 : 6
 
-if sfShow
-    // Re-anchor when the previous leg changes (reset pending; stats stay cumulative)
-    if sf_valid and (sf_aHiBar != sf_seen_hi or sf_aLoBar != sf_seen_lo)
+if sfShow and sf_valid
+    // Keep the anchor current every valid bar (plots read sf_hi/sf_lo/sf_is_up)
+    sf_hi     := sf_aHi
+    sf_lo     := sf_aLo
+    sf_hi_bar := sf_aHiBar
+    sf_lo_bar := sf_aLoBar
+    sf_is_up  := sf_aHiBar > sf_aLoBar
+    // "New previous leg" detection (na-safe): reset pending + redraw labels
+    if na(sf_seen_hi) or sf_aHiBar != sf_seen_hi or sf_aLoBar != sf_seen_lo
         sf_seen_hi := sf_aHiBar
         sf_seen_lo := sf_aLoBar
-        sf_hi     := sf_aHi
-        sf_lo     := sf_aLo
-        sf_hi_bar := sf_aHiBar
-        sf_lo_bar := sf_aLoBar
-        sf_is_up  := sf_aHiBar > sf_aLoBar
         sf_pend_bar := na
         sf_draw()
 
@@ -2763,19 +2764,6 @@ plot(sfShow ? sf_v786 : na, "Swing Fib 0.786", color = sfColor)
 plot(sfShow ? sf_v1   : na, "Swing Fib 1",     color = sfColor)
 plot(sfShow and sfExtend ? sf_v127 : na, "Swing Fib 1.272", color = sfColor)
 plot(sfShow and sfExtend ? sf_v161 : na, "Swing Fib 1.618", color = sfColor)
-
-// TEMP DEBUG — always on (not gated by sfShow). Screenshot this label.
-var label sf_dbg = na
-if barstate.islast
-    label.delete(sf_dbg)
-    sf_dbg := label.new(bar_index, high,
-         "SF DEBUG\nsfShow=" + str.tostring(sfShow)
-         + "\nsf_valid=" + str.tostring(sf_valid)
-         + "\nsf_hi=" + str.tostring(sf_hi) + "  sf_lo=" + str.tostring(sf_lo)
-         + "\nsf_v0=" + str.tostring(sf_v0) + "  sf_v5=" + str.tostring(sf_v5)
-         + "\nHidx=" + str.tostring(highSwing.index) + "  Lidx=" + str.tostring(lowSwing.index)
-         + "\npHidx=" + str.tostring(prevHighSwing.index) + "  pLidx=" + str.tostring(prevLowSwing.index),
-         style = label.style_label_left, color = color.orange, textcolor = color.black, size = size.large)
 
 
 // Smoothing MA inputs
