@@ -2678,8 +2678,11 @@ sf_draw() =>
     for lb in sf_labels
         label.delete(lb)
     sf_labels.clear()
+    // Draw the grid straight off the swing candle wicks: left endpoint on the
+    // earlier wick candle, right endpoint on the later wick candle, so the 0.0
+    // and 1.0 corners sit exactly on the two wick tips (high[1]/low[1]).
     int x1   = math.min(sf_hi_bar, sf_lo_bar)
-    int x2   = bar_index + 10
+    int x2   = math.max(sf_hi_bar, sf_lo_bar)
     int last = sfExtend ? array.size(SF_R) - 1 : 6
     for i = 0 to last
         float lp = sf_lvl(i)
