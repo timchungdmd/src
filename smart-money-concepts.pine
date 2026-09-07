@@ -2694,14 +2694,15 @@ sf_draw() =>
         sf_labels.push(label.new(x2, lp, s, style = label.style_label_left, color = color.new(#000000, 100), textcolor = sfColor, size = 8))
     true
 
-// Anchor to the swing just before the current leg — computed EVERY bar (not
-// gated by isconfirmed), so it is set even on the live/forming bar. Keep the
-// earlier-side pivot and swap the most-recent pivot for the one-behind on that side.
-sf_latestHi = highSwing.index > lowSwing.index
-sf_aHi    = sf_latestHi ? prevHighSwing.price : highSwing.price
-sf_aHiBar = sf_latestHi ? prevHighSwing.index : highSwing.index
-sf_aLo    = sf_latestHi ? lowSwing.price : prevLowSwing.price
-sf_aLoBar = sf_latestHi ? lowSwing.index : prevLowSwing.index
+// Anchor to the SAME leg the profile is drawn on — the current swing high and
+// the current/most-recent swing low — computed EVERY bar (not gated by
+// isconfirmed) so it is set even on the live/forming bar. Orientation then
+// follows which of the two is more recent: down move (low most recent) -> 0 at
+// the low, 1 at the high; up move (high most recent) -> 0 at the high, 1 at the low.
+sf_aHi    = highSwing.price
+sf_aHiBar = highSwing.index
+sf_aLo    = lowSwing.price
+sf_aLoBar = lowSwing.index
 sf_valid  = not na(sf_aHi) and not na(sf_aLo) and not na(sf_aHiBar) and not na(sf_aLoBar) and sf_aHi != sf_aLo
 sf_last   = sfExtend ? array.size(SF_R) - 1 : 6
 
