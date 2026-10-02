@@ -2139,20 +2139,6 @@ offsetMultiplier  = input.float(0.8, "Label Offset Multiplier", minval = 0.0, ma
 
 
 //---------------------------------------------------------------------------------------------------------------------}
-// Types & Methods
-//---------------------------------------------------------------------------------------------------------------------{
-type StructurePoint
-    float price
-    int   index
-    string term 
-    float feat1 
-    float feat2 
-    float score 
-
-method getDistance(StructurePoint p1, StructurePoint p2) =>
-    math.abs(p1.feat1 - p2.feat1) + math.abs(p1.feat2 - p2.feat2)
-
-//---------------------------------------------------------------------------------------------------------------------}
 // Dynamic Detection Engine
 //---------------------------------------------------------------------------------------------------------------------{
 float atr = ta.atr(200)
@@ -2168,35 +2154,17 @@ f_detect_pivots(len) =>
     pl = ta.pivotlow(low, len, len)
     [ph, pl]
 
-f_knn_score(StructurePoint current, array<StructurePoint> history, int k) =>
-    float score = 0.0
-    if history.size() > k
-        array<float> distances = array.new_float(0)
-        for p in history
-            distances.push(current.getDistance(p))
-        array<int> ranks = array.new_int(0)
-        for i = 0 to history.size() - 1
-            ranks.push(i)
-        for i = 0 to k - 1
-            for j = i + 1 to history.size() - 1
-                if distances.get(ranks.get(j)) < distances.get(ranks.get(i))
-                    temp = ranks.get(i)
-                    ranks.set(i, ranks.get(j))
-                    ranks.set(j, temp)
-        float sumScore = 0.0
-        for i = 0 to k - 1
-            sumScore += history.get(ranks.get(i)).score
-        score := sumScore / k
-    else
-        score := 0.5 
-    score
-
 //---------------------------------------------------------------------------------------------------------------------}
 // Core Execution
 //---------------------------------------------------------------------------------------------------------------------{
-var stHistoryHigh = array.new<StructurePoint>(0), var stHistoryLow  = array.new<StructurePoint>(0)
-var mtHistoryHigh = array.new<StructurePoint>(0), var mtHistoryLow  = array.new<StructurePoint>(0)
-var ltHistoryHigh = array.new<StructurePoint>(0), var ltHistoryLow  = array.new<StructurePoint>(0)
+// History arrays only need their size: every stored kNN score was 1.0, so the
+// classifier score is exactly 1.0 once a history holds > k points, else 0.5.
+var stHistoryHigh = array.new<float>(0)
+var stHistoryLow  = array.new<float>(0)
+var mtHistoryHigh = array.new<float>(0)
+var mtHistoryLow  = array.new<float>(0)
+var ltHistoryHigh = array.new<float>(0)
+var ltHistoryLow  = array.new<float>(0)
 
 var float lastSTHigh = na, var float lastSTLow = na
 var float lastMTHigh = na, var float lastMTLow = na
@@ -2205,10 +2173,6 @@ var float lastLTHigh = na, var float lastLTLow = na
 var line activeSTHigh = na, var line activeSTLow = na
 var line activeMTHigh = na, var line activeMTLow = na
 var line activeLTHigh = na, var line activeLTLow = na
-
-float relVol = volume / ta.sma(volume, 100)
-atr14 = ta.atr(14)
-float relATR = atr14 / ta.sma(atr14, 100)
 
 // Define Active Term Hierarchy
 string activeTerm = biasSourceInput == "None" ? "" : (biasSourceInput != "Auto" ? biasSourceInput : (showLT ? "LT" : showMT ? "MT" : showST ? "ST" : ""))
@@ -2221,101 +2185,55 @@ f_parse_size(s) =>
         "Large"  => size.large
         => size.small
 
-f_process_term(float ph, float pl, int len, string term, array<StructurePoint> hHigh, array<StructurePoint> hLow, line activeH, line activeL, bool showLines, bool showLabels) =>
-    line outH = activeH
-    line outL = activeL
-    bool phTriggered = false
-    bool plTriggered = false
-    
-    float visualOffset = atr14 * offsetMultiplier
-    
-    currentSize = term == "LT" ? f_parse_size(ltSizeInput) : term == "MT" ? f_parse_size(mtSizeInput) : f_parse_size(stSizeInput)
-    currentText = term == "LT" ? ltLabelInput : term == "MT" ? mtLabelInput : stLabelInput
-    string lStyle = term == "LT" ? line.style_solid : term == "MT" ? line.style_dashed : line.style_dotted
-
-    if not na(ph)
-        current = StructurePoint.new(ph, bar_index[len], term, relATR[len], relVol[len], 1.0)
-        bool isValid = f_knn_score(current, hHigh, knnKInput) >= minConfidence
-        if isValid
+// One side (high or low) of one term: kNN gate, optional icon label, active
+// line replacement, and history push. Returns the (possibly new) active line.
+f_term_side(float p, int len, string term, array<float> hist, line active, bool showLines, bool showLabels, color col, float yOff) =>
+    line out = active
+    if not na(p)
+        if (hist.size() > knnKInput ? 1.0 : 0.5) >= minConfidence
             if showLabels
-                y = ph + visualOffset
-                label.new(bar_index[len], y, currentText, style = label.style_none, textcolor = BULL_COLOR, size = currentSize)
-            
+                label.new(bar_index[len], p + yOff, term == "LT" ? ltLabelInput : term == "MT" ? mtLabelInput : stLabelInput, style = label.style_none, textcolor = col, size = f_parse_size(term == "LT" ? ltSizeInput : term == "MT" ? mtSizeInput : stSizeInput))
             if showLines
-                if not na(outH) 
-                    outH.delete()
-                outH := line.new(bar_index[len], ph, bar_index, ph, color = BULL_COLOR, style = lStyle)
-                phTriggered := true
+                out.delete()
+                out := line.new(bar_index[len], p, bar_index, p, color = col, style = term == "LT" ? line.style_solid : term == "MT" ? line.style_dashed : line.style_dotted)
+        hist.push(p)
+        if hist.size() > 100
+            hist.shift()
+    out
 
-        hHigh.push(current)
-        if hHigh.size() > 100 
-            hHigh.shift()
-
-    if not na(pl)
-        current = StructurePoint.new(pl, bar_index[len], term, relATR[len], relVol[len], 1.0)
-        bool isValid = f_knn_score(current, hLow, knnKInput) >= minConfidence
-        if isValid
-            if showLabels
-                y = pl - visualOffset
-                label.new(bar_index[len], y, currentText, style = label.style_none, textcolor = BEAR_COLOR, size = currentSize)
-            
-            if showLines
-                if not na(outL) 
-                    outL.delete()
-                outL := line.new(bar_index[len], pl, bar_index, pl, color = BEAR_COLOR, style = lStyle)
-                plTriggered := true
-
-        hLow.push(current)
-        if hLow.size() > 100 
-            hLow.shift()
-    [outH, outL, phTriggered, plTriggered]
+float lblOff = atr_raw * offsetMultiplier
 
 // Process Terms
 [stPH, stPL] = f_detect_pivots(baseLen)
-[newSTH, newSTL, stHT, stLT] = f_process_term(stPH, stPL, baseLen, "ST", stHistoryHigh, stHistoryLow, activeSTHigh, activeSTLow, showST, stLabelsInput)
-activeSTHigh := newSTH, activeSTLow := newSTL
-
-if not na(stPH)
-    lastSTHigh := stPH
-if not na(stPL)
-    lastSTLow := stPL
+activeSTHigh := f_term_side(stPH, baseLen, "ST", stHistoryHigh, activeSTHigh, showST, stLabelsInput, BULL_COLOR, lblOff)
+activeSTLow  := f_term_side(stPL, baseLen, "ST", stHistoryLow, activeSTLow, showST, stLabelsInput, BEAR_COLOR, -lblOff)
+lastSTHigh := nz(stPH, lastSTHigh)
+lastSTLow  := nz(stPL, lastSTLow)
 
 mtLen = baseLen * 3
 [mtPH, mtPL] = f_detect_pivots(mtLen)
-[newMTH, newMTL, mtHT, mtLT] = f_process_term(mtPH, mtPL, mtLen, "MT", mtHistoryHigh, mtHistoryLow, activeMTHigh, activeMTLow, showMT, mtLabelsInput)
-activeMTHigh := newMTH, activeMTLow := newMTL
-
-if not na(mtPH)
-    lastMTHigh := mtPH
-if not na(mtPL)
-    lastMTLow := mtPL
+activeMTHigh := f_term_side(mtPH, mtLen, "MT", mtHistoryHigh, activeMTHigh, showMT, mtLabelsInput, BULL_COLOR, lblOff)
+activeMTLow  := f_term_side(mtPL, mtLen, "MT", mtHistoryLow, activeMTLow, showMT, mtLabelsInput, BEAR_COLOR, -lblOff)
+lastMTHigh := nz(mtPH, lastMTHigh)
+lastMTLow  := nz(mtPL, lastMTLow)
 
 ltLen = mtLen * 3
 [ltPH, ltPL] = f_detect_pivots(ltLen)
-[newLTH, newLTL, ltHT, ltLT] = f_process_term(ltPH, ltPL, ltLen, "LT", ltHistoryHigh, ltHistoryLow, activeLTHigh, activeLTLow, showLT, ltLabelsInput)
-activeLTHigh := newLTH, activeLTLow := newLTL
-
-if not na(ltPH)
-    lastLTHigh := ltPH
-if not na(ltPL)
-    lastLTLow := ltPL
+activeLTHigh := f_term_side(ltPH, ltLen, "LT", ltHistoryHigh, activeLTHigh, showLT, ltLabelsInput, BULL_COLOR, lblOff)
+activeLTLow  := f_term_side(ltPL, ltLen, "LT", ltHistoryLow, activeLTLow, showLT, ltLabelsInput, BEAR_COLOR, -lblOff)
+lastLTHigh := nz(ltPH, lastLTHigh)
+lastLTLow  := nz(ltPL, lastLTLow)
 
 // Termination Logic
 f_terminate_line(line l, color lineCol, string term, string bosSize = "Small") =>
     line out = l
     if not na(l)
+        l.set_x2(bar_index)
         isHigh = lineCol == BULL_COLOR
-        broken = isHigh ? close > l.get_y1() : close < l.get_y1()
-        if broken
-            l.set_x2(bar_index)
-            midX = math.round(math.avg(l.get_x1(), bar_index))
-            bosCol = isHigh ? BULL_COLOR : BEAR_COLOR
-            lblStyle = isHigh ? label.style_label_down : label.style_label_up
+        if isHigh ? close > l.get_y1() : close < l.get_y1()
             if bosSize != "None"
-                label.new(midX, l.get_y1(), term + " BOS", style = lblStyle, color = #00000000, textcolor = bosCol, size = f_parse_size(bosSize))
+                label.new(math.round(math.avg(l.get_x1(), bar_index)), l.get_y1(), term + " BOS", style = isHigh ? label.style_label_down : label.style_label_up, color = #00000000, textcolor = lineCol, size = f_parse_size(bosSize))
             out := na
-        else
-            l.set_x2(bar_index)
     out
 
 activeSTHigh := f_terminate_line(activeSTHigh, BULL_COLOR, "ST", stBOSInput)
@@ -2331,14 +2249,9 @@ activeLTLow  := f_terminate_line(activeLTLow, BEAR_COLOR, "LT", ltBOSInput)
 selectedHigh = activeTerm == "LT" ? lastLTHigh : activeTerm == "MT" ? lastMTHigh : activeTerm == "ST" ? lastSTHigh : na
 selectedLow  = activeTerm == "LT" ? lastLTLow  : activeTerm == "MT" ? lastMTLow  : activeTerm == "ST" ? lastSTLow  : na
 
-color candleColor = na
-if not na(selectedHigh) and not na(selectedLow)
-    float factor = (close - selectedLow) / math.max(1e-6, selectedHigh - selectedLow)
-    candleColor := factor > 0.5 ? color.from_gradient(factor, 0.5, 1.0, NEUTRAL_COLOR, BULL_COLOR) : color.from_gradient(factor, 0.0, 0.5, BEAR_COLOR, NEUTRAL_COLOR)
-    if close > selectedHigh
-        candleColor := BULL_COLOR
-    if close < selectedLow
-        candleColor := BEAR_COLOR
+// Break below the low wins over break above the high (matches prior if-order)
+float cFactor = (close - selectedLow) / math.max(1e-6, selectedHigh - selectedLow)
+color candleColor = na(selectedHigh) or na(selectedLow) ? na : close < selectedLow ? BEAR_COLOR : close > selectedHigh ? BULL_COLOR : cFactor > 0.5 ? color.from_gradient(cFactor, 0.5, 1.0, NEUTRAL_COLOR, BULL_COLOR) : color.from_gradient(cFactor, 0.0, 0.5, BEAR_COLOR, NEUTRAL_COLOR)
 
 barcolor(colorCandlesInput ? candleColor : na)
 
@@ -2375,20 +2288,12 @@ transparentNA = color.new(color.black, 100)
 string dataSizeInput = input.string("Small", title = "Data Size", options = ["Tiny", "Small", "Normal", "Large", "Huge"])
 
 // Size switcher for labels
-getLabelSize() =>
-    switch dataSizeInput
-        "Small"  => size.small
-        "Normal" => size.normal
-        "Large"  => size.large
-        "Huge"   => size.huge
-        => size.tiny
-
-getZigZagLineStyle() =>
-    switch zigZagStyleInput
-        "Dotted" => line.style_dotted
-        "Dashed" => line.style_dashed
-        "Solid"  => line.style_solid
-
+swingLblSize = switch dataSizeInput
+    "Small"  => size.small
+    "Normal" => size.normal
+    "Large"  => size.large
+    "Huge"   => size.huge
+    => size.tiny
 
 // DeltaFlow overlay (per-bin buy/sell breakdown). All off by default, so the
 // default look and drawing/compile cost are unchanged unless a toggle is on.
@@ -2440,7 +2345,7 @@ f_draw_bin(int prevX, int lastX, float binLow, float binHigh, float ratio, int w
 
 
 // Default bin size based on ATR (declared before the functions that use it)
-priceBinSize = ta.atr(200) * 0.5
+priceBinSize = atr * 0.5
 
 // Build a swing profile: geometry + per-bin volume accumulation. Shared by the
 // historical and real-time legs so the heavy double-loop exists only once.
@@ -2470,7 +2375,7 @@ f_build_profile(float hiPrice, int hiIdx, float loPrice, int loIdx) =>
     [swingBottom, swingTop, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins]
 
 // Render every bin (POC line + main box + DeltaFlow visuals) and build the
-// profile outline. Returns the outline points, the boxes, and the POC lines so
+// profile outline. Returns the outline polyline, the boxes, and the POC lines so
 // the caller can let them persist (history) or track them for deletion (real-time).
 f_render_bins(float swingBottom, int binCount, float binStep, int lastSwingIndex, int prevSwingIndex, array<float> volumeBins, array<float> buyVolumeBins, array<float> sellVolumeBins, color mainCol) =>
     float maxVol = volumeBins.max()
@@ -2484,15 +2389,22 @@ f_render_bins(float swingBottom, int binCount, float binStep, int lastSwingIndex
         int   profileWidth = int(volumeRatio * ((lastSwingIndex - prevSwingIndex) / 2))
         if volumeRatio == 1 and showPOC
             pocLines.push(line.new(showProfile ? prevSwingIndex + profileWidth : prevSwingIndex, math.avg(binLow, binHigh), lastSwingIndex, math.avg(binLow, binHigh), color = pocColor, width = pocWidthInput))
-        for bb in f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), maxVol, mainCol)
-            boxes.push(bb)
+        boxes.concat(f_draw_bin(prevSwingIndex, lastSwingIndex, binLow, binHigh, volumeRatio, profileWidth, buyVolumeBins.get(k), sellVolumeBins.get(k), volumeBins.get(k), maxVol, mainCol))
         if k == 0
             profilePoints.push(chart.point.from_index(prevSwingIndex, binLow))
         profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binLow))
         profilePoints.push(chart.point.from_index(prevSwingIndex + profileWidth, binHigh))
         if k == binCount - 1
             profilePoints.push(chart.point.from_index(prevSwingIndex, binHigh))
-    [profilePoints, boxes, pocLines]
+    polyline poly = showProfile ? polyline.new(profilePoints, false, true, line_color = showHeatMap ? color.new(mainCol, 50) : mainCol) : na
+    [poly, boxes, pocLines]
+
+// Summary text for a swing profile (labels/tooltips): total, buy, sell, delta %
+f_vol_text(array<float> vb, array<float> bb, array<float> sb, string tT, string tB, string tS, string tD) =>
+    float tv = vb.sum()
+    float bv = bb.sum()
+    float sv = sb.sum()
+    tT + str.tostring(tv, format.volume) + tB + str.tostring(bv, format.volume) + tS + str.tostring(sv, format.volume) + tD + str.tostring((bv - sv) / tv * 100, format.percent)
 
 
 // Persistent storage containers
@@ -2508,9 +2420,6 @@ type SwingData
 
 var highSwing = SwingData.new(na, na)
 var lowSwing  = SwingData.new(na, na)
-// One-behind swing points, for the previous-swing fib
-var prevHighSwing = SwingData.new(na, na)
-var prevLowSwing  = SwingData.new(na, na)
 
 // Direction flag: true = down move, false = up move
 var isDownMove = false
@@ -2521,75 +2430,23 @@ var isDownMove = false
 highestSwingHigh = ta.highest(swingLen)
 lowestSwingLow   = ta.lowest(swingLen)
 
-if high == highestSwingHigh
-    isDownMove := true
-if low == lowestSwingLow
-    isDownMove := false
+// A new swing low wins over a new swing high on the same bar (prior if-order)
+isDownMove := low == lowestSwingLow ? false : high == highestSwingHigh ? true : isDownMove
 
-// Store completed swing high (prior one kept for the previous-swing fib)
+// Store completed swing high
 if high[1] == highestSwingHigh[1] and high < highestSwingHigh
-    prevHighSwing.index := highSwing.index
-    prevHighSwing.price := highSwing.price
     highSwing.index := bar_index[1]
     highSwing.price := high[1]
 
-// Store completed swing low (prior one kept for the previous-swing fib)
+// Store completed swing low
 if low[1] == lowestSwingLow[1] and low > lowestSwingLow
-    prevLowSwing.index := lowSwing.index
-    prevLowSwing.price := lowSwing.price
     lowSwing.index := bar_index[1]
     lowSwing.price := low[1]
 
-// HISTORICAL SWING LEG -------------------------------------------------------
+// HISTORICAL + REAL-TIME SWING LEGS ------------------------------------------
 
-// When direction flips we finalize previous swing leg and build full profile
-if isDownMove != isDownMove[1]
-
-    // Clear previous drawings
-    profilePoly.delete()
-    dataLabel.delete()
-    for b in profileBoxes
-        b.delete()
-    profileBoxes.clear()
-
-    swingMainColor = isDownMove ? swingColorDown : swingColorUp
-
-    // Draw zigzag connector
-    if showZigZag
-        line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = getZigZagLineStyle())
-
-    // Build the completed swing profile and render it (boxes / POC persist as history)
-    [swingBottom, swingTop, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins] = f_build_profile(highSwing.price, highSwing.index, lowSwing.price, lowSwing.index)
-    [profilePoints, historyBoxes, historyPoc] = f_render_bins(swingBottom, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins, swingMainColor)
-
-    // Draw outer polyline
-    if showProfile
-        polyline.new(profilePoints, false, true, line_color = showHeatMap ? color.new(swingMainColor, 50) : swingMainColor)
-
-    // Summary label for historical swing
-    swingArrowText = isDownMove ? "▼" : "▲"
-
-    swingTooltip =
-          "Total Volume: " + str.tostring(volumeBins.sum(), format.volume)
-         + "\nBuy Volume: " + str.tostring(buyVolumeBins.sum(), format.volume)
-         + "\nSell Volume: " + str.tostring(sellVolumeBins.sum(), format.volume)
-         + "\nDelta Volume: " + str.tostring((buyVolumeBins.sum() - sellVolumeBins.sum()) / volumeBins.sum() * 100, format.percent)
-
-    label.new(prevSwingIndex, isDownMove ? swingTop : swingBottom, swingArrowText,
-         style = isDownMove ? label.style_label_down : label.style_label_up,
-         color = transparentNA,
-         textcolor = swingMainColor,
-         size = getLabelSize(),
-         tooltip = swingTooltip)
-
-
-// REAL-TIME SWING LEG --------------------------------------------------------
-
-// Real-time profile rebuild on the forming swing. The up-move and down-move
-// cases were identical, so the former if/else is collapsed into one
-// unconditional block (boxes cleared every bar; heavy work gated to last bar).
-
-// Clear the real-time drawings on every update
+// Clear the real-time drawings on every update (done first, so the flip branch
+// needs no clear loop of its own)
 for b in profileBoxes
     b.delete()
 profileBoxes.clear()
@@ -2597,44 +2454,44 @@ for l in profilePocLines
     line.delete(l)
 profilePocLines.clear()
 
-if barstate.islast
-
-    swingMainColor = chart.fg_color
-
-    // Remove previous zigzag preview line
-    line.delete(line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = line.style_dashed)[1])
-
-    // Build the forming swing profile and render it into the tracked containers
+bool spFlip = isDownMove != isDownMove[1]
+if spFlip or barstate.islast
+    // Both legs profile the same highSwing/lowSwing pair, so build it once
     [swingBottom, swingTop, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins] = f_build_profile(highSwing.price, highSwing.index, lowSwing.price, lowSwing.index)
-    [profilePoints, rtBoxes, rtPoc] = f_render_bins(swingBottom, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins, swingMainColor)
-    for bb in rtBoxes
-        profileBoxes.push(bb)
-    for ll in rtPoc
-        profilePocLines.push(ll)
 
-    // Update polyline in real time
-    if showProfile
+    // Direction flip: finalize the completed leg (drawings persist as history)
+    if spFlip
+        profilePoly.delete()
+        dataLabel.delete()
+        swingMainColor = isDownMove ? swingColorDown : swingColorUp
+        if showZigZag
+            line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = swingMainColor, style = zigZagStyleInput == "Dotted" ? line.style_dotted : zigZagStyleInput == "Dashed" ? line.style_dashed : line.style_solid)
+        [hPoly, hBoxes, hPoc] = f_render_bins(swingBottom, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins, swingMainColor)
+        label.new(prevSwingIndex, isDownMove ? swingTop : swingBottom, isDownMove ? "▼" : "▲",
+             style = isDownMove ? label.style_label_down : label.style_label_up,
+             color = transparentNA,
+             textcolor = swingMainColor,
+             size = swingLblSize,
+             tooltip = f_vol_text(volumeBins, buyVolumeBins, sellVolumeBins, "Total Volume: ", "\nBuy Volume: ", "\nSell Volume: ", "\nDelta Volume: "))
+
+    // Forming leg on the last bar: render into the tracked containers
+    if barstate.islast
+        // Remove previous zigzag preview line
+        line.delete(line.new(highSwing.index, highSwing.price, lowSwing.index, lowSwing.price, color = chart.fg_color, style = line.style_dashed)[1])
+        // Delete the previous real-time polyline BEFORE creating the new one
         polyline.delete(profilePoly[1])
-        profilePoly := polyline.new(profilePoints, false, true, line_color = showHeatMap ? color.new(swingMainColor, 50) : swingMainColor)
-
-    // Label with summary data
-    swingTooltip = "T - Total Volume\nB - Buy Volume\nS - Sell Volume\nD - Delta Volume"
-
-    swingDataText =
-          "T: " + str.tostring(volumeBins.sum(), format.volume)
-         + "\nB: " + str.tostring(buyVolumeBins.sum(), format.volume)
-         + "\nS: " + str.tostring(sellVolumeBins.sum(), format.volume)
-         + "\nD: " + str.tostring((buyVolumeBins.sum() - sellVolumeBins.sum()) / volumeBins.sum() * 100, format.percent)
-
-    dataLabel := label.new(prevSwingIndex, not isDownMove ? swingTop : swingBottom, swingDataText,
-         style = not isDownMove ? label.style_label_down : label.style_label_up,
-         color = transparentNA,
-         textcolor = swingMainColor,
-         size = getLabelSize(),
-         tooltip = swingTooltip,
-         textalign = text.align_left)
-
-    label.delete(dataLabel[1])
+        [rtPoly, rtBoxes, rtPoc] = f_render_bins(swingBottom, binCount, binStep, lastSwingIndex, prevSwingIndex, volumeBins, buyVolumeBins, sellVolumeBins, chart.fg_color)
+        profileBoxes.concat(rtBoxes)
+        profilePocLines.concat(rtPoc)
+        profilePoly := rtPoly
+        dataLabel := label.new(prevSwingIndex, not isDownMove ? swingTop : swingBottom, f_vol_text(volumeBins, buyVolumeBins, sellVolumeBins, "T: ", "\nB: ", "\nS: ", "\nD: "),
+             style = not isDownMove ? label.style_label_down : label.style_label_up,
+             color = transparentNA,
+             textcolor = chart.fg_color,
+             size = swingLblSize,
+             tooltip = "T - Total Volume\nB - Buy Volume\nS - Sell Volume\nD - Delta Volume",
+             textalign = text.align_left)
+        label.delete(dataLabel[1])
 
 
 // ── SWING FIB (previous swing) ──────────────────────────────────────────────
@@ -2657,19 +2514,18 @@ var int[]   sf_bounces = array.new<int>(9, 0)
 var line[]  sf_lines   = array.new<line>()
 var label[] sf_labels  = array.new<label>()
 var bool    sf_is_up   = false
-var float   sf_hi      = na
-var float   sf_lo      = na
-var int     sf_hi_bar  = na
-var int     sf_lo_bar  = na
 var int     sf_seen_hi = na
 var int     sf_seen_lo = na
 var int     sf_pend_bar   = na
 var int     sf_pend_lvl   = na
 var float   sf_pend_price = na
+sf_last = sfExtend ? array.size(SF_R) - 1 : 6
 
+// Levels anchor directly on the current swing high/low (same leg as the
+// profile). Only called inside the `sfShow and sf_valid` block below.
 sf_lvl(int i) =>
     float r = array.get(SF_R, i)
-    sf_is_up ? sf_hi - (sf_hi - sf_lo) * r : sf_lo + (sf_hi - sf_lo) * r
+    sf_is_up ? highSwing.price - (highSwing.price - lowSwing.price) * r : lowSwing.price + (highSwing.price - lowSwing.price) * r
 
 sf_draw() =>
     for l in sf_lines
@@ -2682,10 +2538,9 @@ sf_draw() =>
     // land on the wick tips, high[1]/low[1]); the right endpoint extends toward
     // the current bar so every level — top and bottom — stays visible instead of
     // being trapped back on the (past) swing candles.
-    int x1   = math.min(sf_hi_bar, sf_lo_bar)
+    int x1   = math.min(highSwing.index, lowSwing.index)
     int x2   = bar_index + 10
-    int last = sfExtend ? array.size(SF_R) - 1 : 6
-    for i = 0 to last
+    for i = 0 to sf_last
         float lp = sf_lvl(i)
         sf_lines.push(line.new(x1, lp, x2, lp, color = sfColor, width = 1, style = line.style_dotted))
         int t = array.get(sf_touches, i)
@@ -2699,29 +2554,19 @@ sf_draw() =>
 // isconfirmed) so it is set even on the live/forming bar. Orientation then
 // follows which of the two is more recent: down move (low most recent) -> 0 at
 // the low, 1 at the high; up move (high most recent) -> 0 at the high, 1 at the low.
-sf_aHi    = highSwing.price
-sf_aHiBar = highSwing.index
-sf_aLo    = lowSwing.price
-sf_aLoBar = lowSwing.index
-sf_valid  = not na(sf_aHi) and not na(sf_aLo) and not na(sf_aHiBar) and not na(sf_aLoBar) and sf_aHi != sf_aLo
-sf_last   = sfExtend ? array.size(SF_R) - 1 : 6
+sf_valid  = not na(highSwing.price) and not na(lowSwing.price) and not na(highSwing.index) and not na(lowSwing.index) and highSwing.price != lowSwing.price
 
 if sfShow and sf_valid
-    // Keep the anchor current every valid bar (plots read sf_hi/sf_lo/sf_is_up)
-    sf_hi     := sf_aHi
-    sf_lo     := sf_aLo
-    sf_hi_bar := sf_aHiBar
-    sf_lo_bar := sf_aLoBar
-    sf_is_up  := sf_aHiBar > sf_aLoBar
+    sf_is_up := highSwing.index > lowSwing.index
     // "New previous leg" detection (na-safe): reset pending + redraw labels
-    if na(sf_seen_hi) or sf_aHiBar != sf_seen_hi or sf_aLoBar != sf_seen_lo
-        sf_seen_hi := sf_aHiBar
-        sf_seen_lo := sf_aLoBar
+    if na(sf_seen_hi) or highSwing.index != sf_seen_hi or lowSwing.index != sf_seen_lo
+        sf_seen_hi := highSwing.index
+        sf_seen_lo := lowSwing.index
         sf_pend_bar := na
         sf_draw()
 
     // Grade touches on confirmed bars only
-    if barstate.isconfirmed and sf_valid and not na(sf_hi)
+    if barstate.isconfirmed
         if not na(sf_pend_bar)
             float lv = sf_pend_price
             bool broke     = sf_is_up ? close < lv - sfBreakBuf * atr_raw : close > lv + sfBreakBuf * atr_raw
@@ -2749,7 +2594,7 @@ if sfShow and sf_valid
                 sf_pend_price := sf_lvl(best_i)
 
     // Keep the levels extended to the right edge
-    if barstate.islast and not na(sf_hi)
+    if barstate.islast
         sf_draw()
 
 
