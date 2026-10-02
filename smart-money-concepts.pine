@@ -145,6 +145,7 @@ var int   extp_bar = na
 var float extp_t1  = na
 var float extp_t2  = na
 var bool  extp_hit1 = false
+var bool  ext_done  = false   // one extension attempt per fib structure (reset on rebuild)
 
 // Drawing storage
 var line[]  fib_lines  = array.new<line>()
@@ -223,6 +224,7 @@ if barstate.isconfirmed
         pend_bar   := na
         extp_bar   := na
         extp_hit1  := false
+        ext_done   := false
         fib_redraw := true
 
     // pend_bar is only ever set while fib_active, so not na(pend_bar) implies it.
@@ -256,13 +258,14 @@ if barstate.isconfirmed
             pend_price := f_fib(array.get(FIB_R, best_i))
 
     // ── EXTENSION TARGET TRACKING
-    if fib_active and na(extp_bar)
+    if fib_active and na(extp_bar) and not ext_done
         bool broke_extreme = fib_is_up ? close < fib_lo - break_buf * atr_raw : close > fib_hi + break_buf * atr_raw
         if broke_extreme
             extp_bar  := bar_index
             extp_t1   := f_fib(array.get(FIB_E, 0))
             extp_t2   := f_fib(array.get(FIB_E, 1))
             extp_hit1 := false
+            ext_done  := true
             ext_attempts += 1
 
     if not na(extp_bar)
@@ -276,6 +279,11 @@ if barstate.isconfirmed
         if hit2 or (bar_index - extp_bar) >= ext_window
             extp_bar := na
             f_draw_fib()
+
+// Keep the fib lines/labels reaching the current bar (x2 = bar_index + 10); the
+// confirmed-bar redraws above only fire on rebuild/grading/extension events.
+if barstate.islast and fib_active
+    f_draw_fib()
 
 
 // DASHBOARD
@@ -356,10 +364,10 @@ plot(vwapW, 'WTD VWAP Line', col_W, math.max(1, wid_W))
 plot(vwapM, 'MTD VWAP Line', col_M, math.max(1, wid_M))
 
 /////////////Pivot Channel/.////////
-i_pivothigh_len = input.int(21, 'Pivot high length(left, right)', group = 'Pivot points', inline = 'phb')
-i_pivothigh_n = input.int(5, 'Max pivot points', group = 'Pivot points', inline = 'phb')
-i_pivotlow_len = input.int(21, 'Pivot low  length(left, right)', group = 'Pivot points', inline = 'plb')
-i_pivotlow_n = input.int(5, 'Max pivot points', group = 'Pivot points', inline = 'plb')
+i_pivothigh_len = input.int(21, 'Pivot high length(left, right)', minval = 1, group = 'Pivot points', inline = 'phb')
+i_pivothigh_n = input.int(5, 'Max pivot points', minval = 2, maxval = 20, group = 'Pivot points', inline = 'phb')
+i_pivotlow_len = input.int(21, 'Pivot low  length(left, right)', minval = 1, group = 'Pivot points', inline = 'plb')
+i_pivotlow_n = input.int(5, 'Max pivot points', minval = 2, maxval = 20, group = 'Pivot points', inline = 'plb')
 i_drawpivots = input.bool(true, 'Draw pivot points', group = 'Pivot points')
 i_hsource_test = input.source(close, 'Pivot high test source', group = 'Pivot points', tooltip = 'Series that is tested for a high pivot point, if yes takes price from Pivot high source')
 i_hsource = input.source(high, 'Pivot high source', group = 'Pivot points')
@@ -392,13 +400,13 @@ var high_pivots = array.new<PivotPoint>()
 var low_pivots = array.new<PivotPoint>()
 
 ph = ta.pivothigh(i_hsource_test, i_pivothigh_len, i_pivothigh_len)
-if bool(ph)
+if not na(ph)
     if array.size(high_pivots) >= i_pivothigh_n
         array.shift(high_pivots)
     array.push(high_pivots, PivotPoint.new(i_hsource[i_pivothigh_len], bar_index[i_pivothigh_len]))
 
 pl = ta.pivotlow(i_lsource_test, i_pivotlow_len, i_pivotlow_len)
-if bool(pl)
+if not na(pl)
     if array.size(low_pivots) >= i_pivotlow_n
         array.shift(low_pivots)
     array.push(low_pivots, PivotPoint.new(i_lsource[i_pivotlow_len], bar_index[i_pivotlow_len]))
@@ -472,13 +480,13 @@ pivot_channel(array<PivotPoint> pivots, color col, bool cmpIsHigh, float ext_src
     result
 
 if array.size(high_pivots) > 1
-    high_chosen = pivot_channel(high_pivots, i_hcolor, true, i_hsource, 10000000.0, label.style_label_down, color.new(#99d31b, 70))
+    high_chosen = pivot_channel(high_pivots, i_hcolor, true, i_hsource, 1e300, label.style_label_down, color.new(#99d31b, 70))
     if not na(high_chosen)
         line.delete(high_trend)
         high_trend := high_chosen
 
 if array.size(low_pivots) > 1
-    low_chosen = pivot_channel(low_pivots, i_lcolor, false, i_lsource, 100000.0, label.style_label_up, color.new(#FA5032, 70))
+    low_chosen = pivot_channel(low_pivots, i_lcolor, false, i_lsource, 1e300, label.style_label_up, color.new(#FA5032, 70))
     if not na(low_chosen)
         line.delete(low_trend)
         low_trend := low_chosen
@@ -546,7 +554,7 @@ NormalizePeriod = input.int(100, 'Normalization Period', minval = 10, maxval = 5
 h = input.bool(true, 'Show Histogram', group = g)
 oscPlacement = input.string('Bottom', '', options = ['Top', 'Bottom'], inline = 'VOL', group = g)
 oscHight = 21 - input.int(7, ' Hight', minval = 1, maxval = 10, inline = 'VOL', group = g) * 2
-lookbackLength = input.int(200, 'Overlay Indicator Display Length', minval = 10, maxval = 495, group = g)
+lookbackLength = input.int(200, 'Overlay Indicator Display Length', minval = 10, maxval = 300, group = g)
 cvdSize  = input.float(3.0, 'CVD Size (Height)', minval = 0.1, maxval = 20.0, step = 0.5, inline = 'CVDSZ', group = g, tooltip = 'Vertical size multiplier for the CVD histogram. Higher = taller and more visible. (Works on top of the "Hight" setting.)')
 cvdWidth = input.int(3, 'Bar Width', minval = 1, maxval = 10, inline = 'CVDSZ', group = g, tooltip = 'Thickness of each CVD bar. Higher = thicker and easier to see.')
 
@@ -560,9 +568,12 @@ if UltraData and Market != 'Stock'
     V3 = nz(request.security((isFx ? 'FOREXCOM:' : 'BINANCE:') + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
     Vsum := V1 + V2 + V3
 
-Volume = UltraData ? Vsum : volume
+// 'Stock' has no Ultra Data sources (Vsum stays 0), so it falls back to chart volume.
+Volume = UltraData and Market != 'Stock' ? Vsum : volume
 
-delta = Volume * ((close - low) / (high - low)) - Volume * ((high - close) / (high - low))
+// (close - low) - (high - close) = 2*close - high - low; zero-range bars contribute 0.
+rng = high - low
+delta = rng > 0 ? Volume * (2 * close - high - low) / rng : 0.0
 
 Cumulative = if CumMode == 'Total'
     ta.cum(delta)
