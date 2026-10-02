@@ -819,7 +819,7 @@ if barstate.islast and array.size(fp) >= kMin * minPts
     //--- is always >= 0 > -1, so the first pass always seeds cent/bestSil.
     bestSil = -1.0
     cent = array.new<float>(1, 0.0)
-    for kk = (autoK ? kMin : kFix) to (autoK ? math.min(kMax, int(n / minPts)) : kFix)
+    for kk = (autoK ? kMin : kFix) to (autoK ? math.max(kMin, math.min(kMax, int(n / minPts))) : kFix)
         cTry = f_kmeans(logs, kk, passes)
         s = f_silhouette(logs, cTry)
         if s > bestSil
@@ -914,7 +914,7 @@ if barstate.islast and array.size(fp) >= kMin * minPts
         for j = 0 to n - 1
             c = array.get(cid, j)
             shown = c >= 0 and array.indexof(pick, c) >= 0
-            if array.size(dots) < 400 and (shown or (showNoise and c < 0))
+            if array.size(dots) < 200 and (shown or (showNoise and c < 0))
                 dc = c < 0 ? noiseCol : (math.exp(array.get(cSum, c) / array.get(cCnt, c)) < close ? supCol : resCol)
                 array.push(dots, label.new(array.get(fb, j), array.get(fp, j), "•", style = label.style_none, textcolor = color.new(dc, c < 0 ? 35 : 0), size = dotSize))
 
@@ -1039,15 +1039,11 @@ min_rr           = input.float(1.0,  "Min Risk:Reward Ratio",  minval=0.1, step=
 slippage_ticks   = input.float(1.0,  "Slippage (Ticks)",       minval=0.0, step=0.1, group=grp_flt)
 commission_pct   = input.float(0.0001,"Commission (%)",         minval=0.0, step=0.0001, group=grp_flt)
 
-col_bull         = input.color(color.rgb(0, 255, 180, 0),    "Bullish Color",       group=grp_vis)
-col_bear         = input.color(color.rgb(255, 30, 120, 0),   "Bearish Color",       group=grp_vis)
-fill_transp      = input.int(80, "Fill Transparency", minval=50, maxval=99, group=grp_vis)
-show_tgt         = input.bool(true,  "Show Measured Targets",     group=grp_vis)
+show_tgt        = input.bool(true,  "Show Measured Targets",     group=grp_vis)
 stop_buffer      = input.float(0.5,  "Stop Loss ATR Buffer", minval=0.0, step=0.1, group=grp_vis)
 use_sl_pct_tgt   = input.bool(true, "SL as % of Target Dist", group=grp_vis)
 sl_pct_tgt       = input.float(25.0, "SL % of Target Dist",    minval=1.0, maxval=100.0, step=0.5, group=grp_vis) / 100
 max_patterns     = input.int(1,      "Max Patterns Displayed", minval=1, maxval=50, group=grp_vis)
-extend_lines     = input.bool(false, "Extend Breakout Lines",      group=grp_vis)
 col_entry        = input.color(color.rgb(255, 220, 0, 0),    "Entry Line Color",  group=grp_vis)
 col_stop         = input.color(color.rgb(255, 50, 130, 0),   "Stop Line Color",   group=grp_vis)
 col_target       = input.color(color.rgb(0, 255, 160, 0),    "Target Line Color", group=grp_vis)
@@ -1107,15 +1103,6 @@ string clean_ticker = syminfo.prefix + ':' + syminfo.ticker
 // ── GLOBAL CALCULATIONS ──────────────────────────────────────────────────────
 vol_sma = ta.sma(volume, math.max(1, math.min(vol_len, bar_index + 1)))
 
-int   dash_piv_total = array.size(pivotHighs) + array.size(pivotLows)
-int   dash_bars_since = bar_index - dash_last_bar
-float dash_vol_ratio  = vol_sma > 0 ? volume / vol_sma : 1.0
-float dash_vol_score  = math.min(math.max((dash_vol_ratio - 1.0) / 4.0 * 10.0, 0.0), 10.0)
-
-float dash_rr_raw     = not na(dash_entry) and not na(dash_stop) and not na(dash_target) and math.abs(dash_entry - dash_stop) > 0 ? math.abs(dash_target - dash_entry) / math.abs(dash_entry - dash_stop) : 0.0
-float dash_rr_score   = math.min(dash_rr_raw / 5.0 * 10.0, 10.0)
-float dash_piv_score  = math.min(dash_piv_total / 20.0 * 10.0, 10.0)
-
 f_blockBar(float score) =>
     int    n = math.min(math.max(math.round(score), 0), 10)
     string s = ''
@@ -1126,16 +1113,11 @@ f_blockBar(float score) =>
 f_blockColor(float score) =>
     score >= 7.0 ? color.rgb(0, 255, 120) : score >= 4.0 ? color.rgb(80, 255, 0) : score >= 1.5 ? color.rgb(200, 200, 0) : color.rgb(110, 110, 110)
 
-string dash_bias_str  = dash_pat_bull ? "▲ Bull" : "▼ Bear"
-color  dash_bias_col  = dash_pat_bull ? color.rgb(0, 255, 120) : color.rgb(255, 60, 80)
-string dash_name_str  = dash_pat_name
-string dash_atr_str   = atr_norm_en ? str.tostring(math.round(atr_raw / syminfo.mintick), "##0") + " ticks" : str.tostring(atr_raw, format.mintick)
-
 // ── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 f_pivot(series float src, simple int len, simple bool isHigh) =>
     float candidate = src[len]
     bool  isValid   = true
-    for i = 1 to len * 2
+    for i = 0 to len * 2
         if i != len and (isHigh ? src[i] >= candidate : src[i] <= candidate)
             isValid := false
     isValid ? candidate : na
@@ -1144,7 +1126,8 @@ f_project(float x1, float y1, float x2, float y2, float target_x) =>
     x2 == x1 ? y1 : y1 + ((y2 - y1) / (x2 - x1)) * (target_x - x1)
 
 f_isNear(float v1, float v2, float tol_pct) =>
-    math.abs(v1 - v2) <= ((v1 + v2) / 2) * tol_pct
+    // abs() on the reference keeps the check meaningful for negative inputs (slopes)
+    math.abs(v1 - v2) <= math.abs((v1 + v2) / 2) * tol_pct
 
 f_neck_at_break(int nl_i, float nl_p, int nr_i, float nr_p, int b_idx) =>
     na(nl_i) and na(nr_i) ? na :
@@ -1214,7 +1197,7 @@ f_emit(bool cond, string nm, bool bull, int b, float anchor, float tp, int st) =
     float ep = f_get_entry_price(b)
     float sp = f_sl_pat(anchor, bull, ep, tp)
     bool  ok = f_validate_pattern(b, ep, sp, tp)
-    cond and ok and not na(ep) ? PatternResult.new(true, nm, bull, ep, sp, tp, st, b) : EMPTY_RES
+    cond and ok and not na(ep) and (bull ? tp > ep : tp < ep) ? PatternResult.new(true, nm, bull, ep, sp, tp, st, b) : EMPTY_RES
 
 f_manage_drawings(int max_items) =>
     while array.size(pat_history) > max_items
@@ -1231,16 +1214,17 @@ f_tgt_lvl(PatternDrawings pd, int x1, float y, color c, string pre, string suf, 
     pd.lbls.push(label.new(x1 + 51, y, pre + str.tostring(y, format.mintick) + suf, style=label.style_label_left, color=color.new(c, 70), textcolor=c, size=sz))
 
 // ── PIVOT COLLECTION ─────────────────────────────────────────────────────────
-// Runs after dash_piv_total (pre-update count) and before the detectors.
+// Runs before the detectors. f_pivot tests src[lb_left] against lb_left bars on
+// each side, so pivots are stamped at bar_index - lb_left (the bar actually tested).
 // renamed ph/pl -> mk_ph/mk_pl (bare ph/pl are Pivot Channel globals above)
 float mk_ph = f_pivot(high, lb_left, true)
 float mk_pl = f_pivot(low, lb_left, false)
 if not na(mk_ph)
-    pivotHighs.unshift(Pivot.new(mk_ph, bar_index - lb_right))
+    pivotHighs.unshift(Pivot.new(mk_ph, bar_index - lb_left))
     if pivotHighs.size() > max_piv_hist
         pivotHighs.pop()
 if not na(mk_pl)
-    pivotLows.unshift(Pivot.new(mk_pl, bar_index - lb_right))
+    pivotLows.unshift(Pivot.new(mk_pl, bar_index - lb_left))
     if pivotLows.size() > max_piv_hist
         pivotLows.pop()
 bool has_pivots = pivotHighs.size() >= 2 and pivotLows.size() >= 2
@@ -1391,7 +1375,7 @@ if _is_new_pattern
     // Outline drawing removed for compile budget; place the pattern-name label at
     // the pattern midpoint / entry level.
     if not na(res.start_idx) and not na(res.breakout_idx) and not na(res.entryPrice)
-        int _cx = (res.start_idx + res.breakout_idx) / 2
+        int _cx = int((res.start_idx + res.breakout_idx) / 2)
         current_pat.lbls.push(label.new(_cx, res.entryPrice, txt, color=color.rgb(0, 0, 0, 0), textcolor=color.white, style=label.style_label_center, size=_lbl_sz))
 
     if alert_en and not na(res.entryPrice) and not na(res.targetPrice) and not na(res.stopPrice)
@@ -1421,11 +1405,22 @@ f_dash_row(int r, string k, string v, color bg, color vc) =>
     table.cell(dash, 0, r, k, bgcolor=bg, text_color=dash_txt_color, text_halign=text.align_left,  text_font_family=font.family_monospace, text_size=size.small)
     table.cell(dash, 1, r, v, bgcolor=bg, text_color=vc,             text_halign=text.align_right, text_font_family=font.family_monospace, text_size=size.small)
 
-// a var table only shows its last-bar contents, so populate it on the last bar only
+// a var table only shows its last-bar contents, so populate it on the last bar only.
+// Display values are derived here, after this bar's pivot collection and pattern
+// dispatch, so a pattern found on the last bar is shown immediately (not one bar late).
 if barstate.islast
+    int    dash_piv_total  = array.size(pivotHighs) + array.size(pivotLows)
+    int    dash_bars_since = bar_index - dash_last_bar
+    float  dash_vol_ratio  = vol_sma > 0 ? volume / vol_sma : 1.0
+    float  dash_vol_score  = math.min(math.max((dash_vol_ratio - 1.0) / 4.0 * 10.0, 0.0), 10.0)
+    float  dash_rr_raw     = not na(dash_entry) and not na(dash_stop) and not na(dash_target) and math.abs(dash_entry - dash_stop) > 0 ? math.abs(dash_target - dash_entry) / math.abs(dash_entry - dash_stop) : 0.0
+    float  dash_rr_score   = math.min(dash_rr_raw / 5.0 * 10.0, 10.0)
+    float  dash_piv_score  = math.min(dash_piv_total / 20.0 * 10.0, 10.0)
+    color  dash_bias_col   = dash_pat_bull ? color.rgb(0, 255, 120) : color.rgb(255, 60, 80)
+    string dash_atr_str    = atr_norm_en ? str.tostring(math.round(atr_raw / syminfo.mintick), "##0") + " ticks" : str.tostring(atr_raw, format.mintick)
     f_dash_row(0, "  Pattern Detector", clean_ticker + " · " + timeframe.period, hdrBg, dash_txt_color)
-    f_dash_row(1, "  Pattern Bias",   dash_bias_str, altBg, dash_bias_col)
-    f_dash_row(2, "  Active Pattern", dash_name_str, dash_bg_color, dash_bias_col)
+    f_dash_row(1, "  Pattern Bias",   dash_pat_bull ? "▲ Bull" : "▼ Bear", altBg, dash_bias_col)
+    f_dash_row(2, "  Active Pattern", dash_pat_name, dash_bg_color, dash_bias_col)
     f_dash_row(3, "  ATR (14)",       dash_atr_str,  altBg, color.rgb(200, 200, 60))
     f_dash_row(4, "  Vol Spike",      f_blockBar(dash_vol_score), dash_bg_color, f_blockColor(dash_vol_score))
     f_dash_row(5, "  R:R Quality",    f_blockBar(dash_rr_score),  altBg, f_blockColor(dash_rr_score))
