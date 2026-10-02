@@ -789,7 +789,7 @@ if barstate.isconfirmed
         array.shift(pvB)
 
 //--- cluster and draw on the last bar
-var table stat = table.new(position.top_right, 3, 24, border_width = 1)
+var table stat = table.new(position.bottom_left, 3, 24, border_width = 1)
 touched = false
 brokeZ  = false
 
