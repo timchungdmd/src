@@ -2262,12 +2262,10 @@ show_table = input.bool(defval = true, title = 'Show formation table', group = '
 bull_clr = input.color(color.new(color.teal, 0), title = 'Bullish', inline = 'clr1', group = 'Colors 1')
 bear_clr = input.color(color.new(color.red, 0), title = 'Bearish', inline = 'clr1', group = 'Colors 1')
 eq_clr = input.color(color.new(color.black, 50), title = 'Range', inline = 'clr1', group = 'Colors 1')
-cont_clr = input.int(defval = 85, title = ' Contrast', inline = 'clr1', group = 'Colors 1')
 
 bull_clr2 = input.color(color.new(color.aqua, 0), title = 'Bullish', inline = 'clr1', group = 'Colors 2')
 bear_clr2 = input.color(color.new(color.purple, 0), title = 'Bearish', inline = 'clr1', group = 'Colors 2')
 eq_clr2 = input.color(color.new(color.black, 50), title = 'Range', inline = 'clr1', group = 'Colors 2')
-cont_clr2 = input.int(defval = 50, title = ' Contrast', inline = 'clr1', group = 'Colors 2')
 
 lbl_clr = input.color(color.new(color.white, 0), title = 'Label Text Color', inline = 'clr2', group = 'Colors')
 ema_clr = input.color(color.new(color.blue, 0), title = 'Ema line Color', inline = 'ema', group = 'Colors')
@@ -2335,9 +2333,9 @@ tf_ok(_htf) =>
     _ok = timeframe.in_seconds(_htf) >= timeframe.in_seconds(timeframe.period) or _htf == '1D' and str.tonumber(timeframe.period) <= 720 or _htf == '1W' and str.tonumber(timeframe.period) <= 720 or _htf == '1W' and timeframe.isdaily or _htf == '1M' and str.tonumber(timeframe.period) <= 720 or _htf == '1M' and timeframe.isdaily or _htf == '1M' and timeframe.isweekly or _htf == '3M' and timeframe.isweekly or _htf == '3M' and timeframe.isdaily or _htf == '3M' and timeframe.period == '240'
     _ok
 
-f_secret_candle(_c, _o, _h, _l, i, start) =>
+f_secret_candle(_c, _o, _h, _l, i, start, color _bc, color _rc, color _ec) =>
     x = bar_index + dxx + start + (5 - i) * 3
-    clr = _c > _o ? bull_clr : _o > _c ? bear_clr : eq_clr
+    clr = _c > _o ? _bc : _o > _c ? _rc : _ec
     bl0 = box.new(left = x, top = _c, right = x + 2, bottom = _o, bgcolor = clr, border_color = clr)
     wup = box.new(left = x + 1, top = _h, right = x + 1, bottom = math.max(_o, _c), border_color = color.new(clr, 30), border_width = 1)
     wdw = box.new(left = x + 1, top = _l, right = x + 1, bottom = math.min(_o, _c), border_color = color.new(clr, 30), border_width = 1)
@@ -2385,13 +2383,22 @@ f_seg(array<float> hh, array<float> ll, array<float> oo, array<float> cc, array<
 e1 = ta.ema(close, len1)
 plot(show_ema1 and show_candle ? e1 : na, color = color.fuchsia, linewidth = 2, offset = dxx + 16, show_last = 15)
 plot(showemamain ? e1 : na, color = ema_clr)
-e2 = request.security(sym2, tf, e1)
+e2 = request.security(sym2, tf, e1, ignore_invalid_symbol = true)
 plot(show_ema1 and showdbl ? e2 : na, color = color.fuchsia, linewidth = 2, offset = dxx + 36, show_last = 15)
 e3 = request.security(syminfo.tickerid, stf, ta.ema(close, len2))
 plot(show_ema2 and show_candle2 ? e3 : na, color = color.fuchsia, linewidth = 2, offset = dxx + 56, show_last = 15)
 
 f_candlestick(_close, _open, _high, _low, _time, _tf, _bar, _plot, start, _show_candle, _htf, e, te) =>
     [ch1, cl1, cc1, co1, ct1, ch0, cl0, cc0, co0, ct0] = f_live_sym(_close, _open, _high, _low, _time, _tf)
+    // htf tracker called on every bar (was inside the conditional block below).
+    [htf2h1, htf2l1, h2c1, h2o1, h2t1, htf2h0, htf2l0, h2c0, h2o0, h2t0] = f_live_sym(_close, _open, _high, _low, _time, _htf)
+    // Sequence 2 (te == 2) uses Filters 2 / Colors 2; te 0 and 1 use Filters 1 / Colors 1.
+    string sBull = te == 2 ? str_emabull2 : str_emabull
+    string sBear = te == 2 ? str_emabear2 : str_emabear
+    bool cHtf = te == 2 ? con_htf2 : con_htf
+    color cBull = te == 2 ? bull_clr2 : bull_clr
+    color cBear = te == 2 ? bear_clr2 : bear_clr
+    color cEq = te == 2 ? eq_clr2 : eq_clr
     var tf_h = array.new_float()
     var tf_l = array.new_float()
     var tf_c = array.new_float()
@@ -2420,11 +2427,11 @@ f_candlestick(_close, _open, _high, _low, _time, _tf, _bar, _plot, start, _show_
         [_h4, _l4, _o4, _c4, _t4] = f_seg(tf_hh, tf_ll, tf_oo, tf_cc, tf_tt, 4, _bar)
 
         if _plot
-            f_secret_candle(_close, _o0, _h0, _l0, 0, start)
-            f_secret_candle(_c1, _o1, _h1, _l1, 1, start)
-            f_secret_candle(_c2, _o2, _h2, _l2, 2, start)
-            f_secret_candle(_c3, _o3, _h3, _l3, 3, start)
-            f_secret_candle(_c4, _o4, _h4, _l4, 4, start)
+            f_secret_candle(_close, _o0, _h0, _l0, 0, start, cBull, cBear, cEq)
+            f_secret_candle(_c1, _o1, _h1, _l1, 1, start, cBull, cBear, cEq)
+            f_secret_candle(_c2, _o2, _h2, _l2, 2, start, cBull, cBear, cEq)
+            f_secret_candle(_c3, _o3, _h3, _l3, 3, start, cBull, cBear, cEq)
+            f_secret_candle(_c4, _o4, _h4, _l4, 4, start, cBull, cBear, cEq)
 
             lbltop = math.min(_l0, _l1, _l2, _l3, _l4)
             addtext_ = te == 1 ? str.tostring(syminfo.prefix(sym2)) : ''
@@ -2433,15 +2440,14 @@ f_candlestick(_close, _open, _high, _low, _time, _tf, _bar, _plot, start, _show_
 
         var text1 = ''
 
-        [htf2h1, htf2l1, h2c1, h2o1, h2t1, htf2h0, htf2l0, h2c0, h2o0, h2t0] = f_live_sym(_close, _open, _high, _low, _time, _htf)
         arr_htf2h = array.from(htf2h0 == _h4, htf2h0 == _h3, htf2h0 == _h2, htf2h0 == _h1, htf2h0 == _h0, htf2h1 == _h4, htf2h1 == _h3, htf2h1 == _h2, htf2h1 == _h1, htf2h1 == _h0)
         arr_htf2l = array.from(htf2l0 == _l4, htf2l0 == _l3, htf2l0 == _l2, htf2l0 == _l1, htf2l0 == _l0, htf2l1 == _l4, htf2l1 == _l3, htf2l1 == _l2, htf2l1 == _l1, htf2l1 == _l0)
 
-        con_ema_bull = str_emabull == 'All' or str_emabull == 'close > ema' and _c0 > e or str_emabull == 'close < ema' and _c0 < e
-        con_ema_bear = str_emabear == 'All' or str_emabear == 'close > ema' and _c0 > e or str_emabear == 'close < ema' and _c0 < e
+        con_ema_bull = sBull == 'All' or sBull == 'close > ema' and _c0 > e or sBull == 'close < ema' and _c0 < e
+        con_ema_bear = sBear == 'All' or sBear == 'close > ema' and _c0 > e or sBear == 'close < ema' and _c0 < e
 
-        con_htfbear = not con_htf or array.some(arr_htf2h)
-        con_htfbull = not con_htf or array.some(arr_htf2l)
+        con_htfbear = not cHtf or array.some(arr_htf2h)
+        con_htfbull = not cHtf or array.some(arr_htf2l)
         filterbear = con_htfbear and con_ema_bear
         filterbull = con_htfbull and con_ema_bull
 
@@ -2495,7 +2501,7 @@ f_candlestick(_close, _open, _high, _low, _time, _tf, _bar, _plot, start, _show_
 [form1, txt1, nm1, plt1v, plt1t, stext1] = f_candlestick(xc0, xo0, xh0, xl0, xt0, tf, bar, showdbl, 20, double, htf, e2, 1)
 [form2, txt2, nm2, plt2v, plt2t, stext2] = f_candlestick(close, open, high, low, time, stf, bar2, true, 40, show_candle2, htf2, e3, 2)
 
-if form0[1] and txt0[1] != txt0[2]
+if form0[1] and (not double or form1[1]) and txt0[1] != txt0[2]
     alert(f_text(tf) + ' ' + txt0[1], alert.freq_once_per_bar)
     if show_label
         lbl0 := label.new(math.round((plt0t[1] + time[1]) / 2), plt0v[1] - math.sign(nm0[1]) * (math.abs(nm0[1]) - 2) * pattatr, text = stext0[1], xloc = xloc.bar_time, color = color.new(bull_clr, 100), style = label.style_label_center, textcolor = nm0[1] > 0 ? bull_clr : bear_clr, size = sz)
@@ -2563,7 +2569,7 @@ gSTY="Visual Style"
 
 // ~~ Inputs {
 profLb=input.int(600,"Lookback",minval=100,maxval=1500,group=gPROF,inline="p1")
-profRows=input.int(72,"Rows",minval=24,maxval=100,group=gPROF,inline="p1",tooltip=bsp_tt1+"\n\n"+bsp_tt2)
+profRows=input.int(48,"Rows",minval=24,maxval=100,group=gPROF,inline="p1",tooltip=bsp_tt1+"\n\n"+bsp_tt2)
 bsProfW=input.int(58,"Width",minval=15,maxval=110,group=gPROF,inline="p2")
 profOff=input.int(8,"Offset",minval=2,maxval=50,group=gPROF,inline="p2",tooltip=bsp_tt3+"\n\n"+bsp_tt4)
 bsShowProf=input.bool(true,"Show Profile",group=gPROF,inline="p3")
@@ -2575,7 +2581,7 @@ nodeMin=input.float(0.08,"Min Node",minval=0.0,maxval=1.0,step=0.01,group=gENG,i
 evidMin=input.float(0.22,"Min Evidence",minval=0.0,maxval=1.0,step=0.01,group=gENG,inline="e2",tooltip=bsp_tt10+"\n\n"+bsp_tt11)
 pullMax=input.float(0.85,"Profile Pull",minval=0.0,maxval=1.0,step=0.05,group=gENG,inline="e3")
 scoreMin=input.float(30.0,"Min Score",minval=0,maxval=100,step=1,group=gENG,inline="e3",tooltip=bsp_tt12+"\n\n"+bsp_tt13)
-maxLvl=input.int(20,"Max Levels",minval=2,maxval=40,group=gENG,inline="e4")
+maxLvl=input.int(12,"Max Levels",minval=2,maxval=40,group=gENG,inline="e4")
 mergeAtr=input.float(0.16,"Merge ATR",minval=0.0,maxval=1.0,step=0.02,group=gENG,inline="e4")
 breakAtr=input.float(0.10,"Break ATR",minval=0.0,maxval=0.5,step=0.01,group=gENG,inline="e4",tooltip=bsp_tt14+"\n\n"+bsp_tt15+"\n\n"+bsp_tt16)
 bsSupCol=input.color(color.rgb(31,199,116),"Support",group=gSTY,inline="c1")
@@ -2598,6 +2604,8 @@ int ABS_RAD=math.min(3,bsSwingLen)
 float PIV_VOL_X=2.2
 float ABS_BODY_MAX=0.40
 float ABS_VOL_X=1.5
+// Global so history refs below are bar-based (a param's history inside a pivot-only call is per-call).
+bsAvgVol=ta.sma(volume,VOL_LEN)
 //~~}
 
 // ~~ Types {
@@ -2665,8 +2673,8 @@ profile(int newest,int oldest,int rows)=>
                 buy.set(j,buy.get(j)+av*bf)
     [bot,step,tot,buy]
 
-pivot_features(bool supp,float avgVol)=>
-    float vb=nz(avgVol[bsSwingLen],volume[bsSwingLen])
+pivot_features(bool supp)=>
+    float vb=nz(bsAvgVol[bsSwingLen],volume[bsSwingLen])
     float vr=vb>0?nz(volume[bsSwingLen],0.0)/vb:1.0
     float vSc=clip((vr-0.8)/(PIV_VOL_X-0.8))
     float pr=math.max(high[bsSwingLen]-low[bsSwingLen],syminfo.mintick)
@@ -2677,7 +2685,7 @@ pivot_features(bool supp,float avgVol)=>
         int o=bsSwingLen-ABS_RAD+n
         float cr=math.max(high[o]-low[o],syminfo.mintick)
         float v=math.max(nz(volume[o],0.0),0.0)
-        float base=nz(avgVol[o],v)
+        float base=nz(bsAvgVol[o],v)
         float vRat=base>0?v/base:1.0
         float bRat=math.abs(close[o]-open[o])/cr
         float small=clip((ABS_BODY_MAX-bRat)/ABS_BODY_MAX)
@@ -2785,12 +2793,12 @@ score_tip(Lvl lv)=>"Raw pivot: "+str.tostring(lv.raw,format.mintick)+"\nProfile 
  +"\nProfile evidence: "+str.tostring(lv.evid*100.0,"#")+"%\nNode strength vs POC: "+str.tostring(lv.nStr*100.0,"#")
  +"%\nFinal level: "+str.tostring(lv.p,format.mintick)
 
-pivot_eval(array<Lvl> a,float raw,bool supp,float avgVol,float bsAtr)=>
+pivot_eval(array<Lvl> a,float raw,bool supp)=>
     int bars=math.max(1,math.min(profLb,bar_index-bsSwingLen+1))
     [bot,step,tot,buy]=profile(bsSwingLen,bsSwingLen+bars-1,profRows)
-    float atrP=math.max(nz(bsAtr[bsSwingLen],syminfo.mintick),syminfo.mintick)
+    float atrP=math.max(nz(atr_raw[bsSwingLen],syminfo.mintick),syminfo.mintick)
     [node,evid,nStr]=profile_node(raw,supp,atrP,bot,step,tot,buy)
-    [vSc,wSc,aSc]=pivot_features(supp,avgVol)
+    [vSc,wSc,aSc]=pivot_features(supp)
     bool ok=nStr>=nodeMin and evid>=evidMin
     float p=raw+(node-raw)*(ok?pullMax*clip(evid/0.65):0.0)
     float sc=100.0*(0.50*evid+0.20*aSc+0.15*vSc+0.15*wSc)
@@ -2859,10 +2867,10 @@ draw_profile(array<Lvl> a,array<box> bx,array<line> ln,array<label> lb)=>
                 float y0=bot+(r+0.08)*step
                 float y1=bot+(r+0.92)*step
                 int fade=int(math.round(76.0-46.0*str))
-                if bw>0
+                if bw>0 and tw>=2
                     bx.push(box.new(left=x,top=y1,right=x+bw,bottom=y0,xloc=xloc.bar_index,border_color=color.new(buyCol,100),
                      bgcolor=color.new(buyCol,fade)))
-                if sw>0
+                if sw>0 and tw>=2
                     bx.push(box.new(left=x+bw,top=y1,right=x+tw,bottom=y0,xloc=xloc.bar_index,border_color=color.new(sellCol,100),
                      bgcolor=color.new(sellCol,fade)))
                 if showPoc and r==poc
@@ -2882,7 +2890,6 @@ draw_profile(array<Lvl> a,array<box> bx,array<line> ln,array<label> lb)=>
 //~~}
 
 // ~~ Core Series {
-avgVol=ta.sma(volume,VOL_LEN)
 bsPh=ta.pivothigh(high,bsSwingLen,bsSwingLen)
 bsPl=ta.pivotlow(low,bsSwingLen,bsSwingLen)
 ready=bar_index>VOL_LEN+bsSwingLen*2+5
@@ -2900,9 +2907,9 @@ bool newSup=false
 bool newRes=false
 
 if ready and not na(bsPl)
-    newSup:=pivot_eval(lvls,bsPl,true,avgVol,atr_raw)
+    newSup:=pivot_eval(lvls,bsPl,true)
 if ready and not na(bsPh)
-    newRes:=pivot_eval(lvls,bsPh,false,avgVol,atr_raw)
+    newRes:=pivot_eval(lvls,bsPh,false)
 //~~}
 
 // ~~ Level Lifecycle {
