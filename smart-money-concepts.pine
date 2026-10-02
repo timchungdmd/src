@@ -11,7 +11,6 @@ indicator('Smart Money Concepts [LUX]', 'Smart Money Concepts [LuxAlgo]', overla
 // not to the imported library. Compiling these unused libraries was the single
 // largest contributor to the compile-time timeout.
 
-display = display.all - display.status_line
 //==============================================================================
 //                     SHARED ZIGZAG SETTINGS
 //==============================================================================
@@ -26,7 +25,6 @@ retrepaint = input.bool(true, 'Repaint', inline = 'zigzag', group = 'Zigzag Sett
 //==============================================================================
 new_pivot_high = not na(ta.pivothigh(high, lbL, lbR))
 new_pivot_low = not na(ta.pivotlow(low, lbL, lbR))
-new_pivot = new_pivot_high or new_pivot_low
 
 direction = math.sign(ta.barssince(new_pivot_high) - ta.barssince(new_pivot_low))
 new_direction = bool(ta.change(direction))
@@ -37,30 +35,22 @@ var chart.point second_last_pivot = chart.point.now(high)
 if new_direction
     second_last_pivot := last_pivot.copy()
 
-if new_pivot_high
-    if new_direction
-        last_pivot := chart.point.from_index(bar_index - lbR, high[lbR])
-    else
-        if high[lbR] > last_pivot.price
-            last_pivot := chart.point.from_index(bar_index - lbR, high[lbR])
+if new_pivot_high and (new_direction or high[lbR] > last_pivot.price)
+    last_pivot := chart.point.from_index(bar_index - lbR, high[lbR])
 
-if new_pivot_low
-    if new_direction
-        last_pivot := chart.point.from_index(bar_index - lbR, low[lbR])
-    else
-        if low[lbR] < last_pivot.price
-            last_pivot := chart.point.from_index(bar_index - lbR, low[lbR])
+if new_pivot_low and (new_direction or low[lbR] < last_pivot.price)
+    last_pivot := chart.point.from_index(bar_index - lbR, low[lbR])
 
 var line retzigzag = na
 
-if new_pivot and show_zigzag
+if (new_pivot_high or new_pivot_low) and show_zigzag
     retzigzag := line.new(last_pivot, second_last_pivot, xloc.bar_index, extend.none, zigzag_color)
     if not new_direction
         line.delete(retzigzag[1])
 
 var array<chart.point> points = array.new<chart.point>()
 
-if bool(ta.change(bar_index))
+if bar_index > 0
     points.clear()
     points.push(last_pivot)
     points.push(chart.point.now(hl2))
@@ -160,28 +150,19 @@ var bool  extp_hit1 = false
 var line[]  fib_lines  = array.new<line>()
 var label[] fib_labels = array.new<label>()
 
-f_lvl_price(int i) =>
-    float r = array.get(FIB_R, i)
-    fib_is_up ? fib_hi - (fib_hi - fib_lo) * r : fib_lo + (fib_hi - fib_lo) * r
-
-f_ext_price(int i) =>
-    float r = array.get(FIB_E, i)
-    // Same progression as the retracement levels, so 1.272/1.618 continue PAST
+f_fib(float r) =>
+    // Shared by retracement and extension levels, so 1.272/1.618 continue PAST
     // the 1 level (beyond the far end of the swing), not off the 0 side.
     fib_is_up ? fib_hi - (fib_hi - fib_lo) * r : fib_lo + (fib_hi - fib_lo) * r
 
-f_clear_fib() =>
-    if array.size(fib_lines) > 0
-        for i = 0 to array.size(fib_lines) - 1
-            line.delete(array.get(fib_lines, i))
-        array.clear(fib_lines)
-    if array.size(fib_labels) > 0
-        for i = 0 to array.size(fib_labels) - 1
-            label.delete(array.get(fib_labels, i))
-        array.clear(fib_labels)
+f_pct(int a, int n) =>
+    str.tostring(math.round(float(a) / float(n) * 100.0)) + "%"
 
 f_draw_fib() =>
-    f_clear_fib()
+    while array.size(fib_lines) > 0
+        line.delete(array.pop(fib_lines))
+    while array.size(fib_labels) > 0
+        label.delete(array.pop(fib_labels))
     int x1 = math.min(fib_hi_bar, fib_lo_bar)
     int x2 = bar_index + 10
     array.push(fib_lines, line.new(x1, fib_is_up ? fib_hi : fib_lo, x2, fib_is_up ? fib_hi : fib_lo,
@@ -189,32 +170,26 @@ f_draw_fib() =>
     array.push(fib_lines, line.new(x1, fib_is_up ? fib_lo : fib_hi, x2, fib_is_up ? fib_lo : fib_hi,
                color=color.new(C_NEUTRAL, 55), width=1))
     for i = 0 to 4
-        float lp = f_lvl_price(i)
+        float r = array.get(FIB_R, i)
+        float lp = f_fib(r)
         color lc = i == 3 ? C_AMBER : C_DIM
         array.push(fib_lines, line.new(x1, lp, x2, lp,
                    color=color.new(lc, i == 3 ? 20 : 40), width=1,
                    style=line.style_dotted))
         if show_stats
             int t = array.get(lvl_touches, i)
-            int b = array.get(lvl_bounces, i)
-            string s = str.tostring(array.get(FIB_R, i), "#.###")
-            if t > 0
-                s := s + "  |  " + str.tostring(math.round(float(b) / float(t) * 100.0)) + "% bounced (n=" + str.tostring(t) + ")"
-            else
-                s := s + "  |  no touches yet"
+            string s = str.tostring(r, "#.###") + "  |  " + (t > 0 ? f_pct(array.get(lvl_bounces, i), t) + " bounced (n=" + str.tostring(t) + ")" : "no touches yet")
             array.push(fib_labels, label.new(x2, lp, s,
                        style=label.style_label_left,
                        color=color.new(#000000, 100),
                        textcolor=lc, size=10))
     if show_ext
         for i = 0 to 1
-            float ep = f_ext_price(i)
+            float r = array.get(FIB_E, i)
+            float ep = f_fib(r)
             array.push(fib_lines, line.new(x1, ep, x2, ep,
                        color=color.new(C_GREEN, 60), width=1, style=line.style_dashed))
-            string es = str.tostring(array.get(FIB_E, i), "#.###")
-            if ext_attempts > 0
-                int hits = i == 0 ? ext_hit_1 : ext_hit_2
-                es := es + "  |  hit " + str.tostring(math.round(float(hits) / float(ext_attempts) * 100.0)) + "% (n=" + str.tostring(ext_attempts) + ")"
+            string es = str.tostring(r, "#.###") + (ext_attempts > 0 ? "  |  hit " + f_pct(i == 0 ? ext_hit_1 : ext_hit_2, ext_attempts) + " (n=" + str.tostring(ext_attempts) + ")" : "")
             array.push(fib_labels, label.new(x2, ep, es,
                        style=label.style_label_left,
                        color=color.new(#000000, 100),
@@ -235,37 +210,41 @@ if barstate.isconfirmed
         last_pl_bar := bar_index - pivot_leg
         rebuilt := true
 
-    if rebuilt and not na(last_ph) and not na(last_pl)
-        if math.abs(last_ph - last_pl) >= min_swing_atr * atr_raw
-            fib_active := true
-            fib_is_up  := last_ph_bar > last_pl_bar
-            fib_hi     := last_ph
-            fib_lo     := last_pl
-            fib_hi_bar := last_ph_bar
-            fib_lo_bar := last_pl_bar
-            pend_bar   := na
-            extp_bar   := na
-            extp_hit1  := false
-            f_draw_fib()
+    // A rebuild clears pend_bar, so it and the outcome grading below are mutually
+    // exclusive on any bar: one deferred redraw replaces two f_draw_fib call sites.
+    bool fib_redraw = false
+    if rebuilt and not na(last_ph) and not na(last_pl) and math.abs(last_ph - last_pl) >= min_swing_atr * atr_raw
+        fib_active := true
+        fib_is_up  := last_ph_bar > last_pl_bar
+        fib_hi     := last_ph
+        fib_lo     := last_pl
+        fib_hi_bar := last_ph_bar
+        fib_lo_bar := last_pl_bar
+        pend_bar   := na
+        extp_bar   := na
+        extp_hit1  := false
+        fib_redraw := true
 
-    if fib_active and not na(pend_bar)
-        float lv = pend_price
-        bool is_from_above = fib_is_up    // in an up-swing retracement, price comes down onto levels
-        bool broke = is_from_above ? close < lv - break_buf * atr_raw : close > lv + break_buf * atr_raw
-        bool bounced = is_from_above ? (close - lv) >= bounce_atr * atr_raw : (lv - close) >= bounce_atr * atr_raw
-        bool timed_out = (bar_index - pend_bar) >= outcome_bars
-        if broke or bounced or timed_out
+    // pend_bar is only ever set while fib_active, so not na(pend_bar) implies it.
+    // In an up-swing retracement, price comes down onto levels (fib_is_up = from above).
+    if not na(pend_bar)
+        bool broke = fib_is_up ? close < pend_price - break_buf * atr_raw : close > pend_price + break_buf * atr_raw
+        bool bounced = fib_is_up ? (close - pend_price) >= bounce_atr * atr_raw : (pend_price - close) >= bounce_atr * atr_raw
+        if broke or bounced or (bar_index - pend_bar) >= outcome_bars
             array.set(lvl_touches, pend_lvl, array.get(lvl_touches, pend_lvl) + 1)
             if bounced
                 array.set(lvl_bounces, pend_lvl, array.get(lvl_bounces, pend_lvl) + 1)
             pend_bar := na
-            f_draw_fib()
+            fib_redraw := true
+
+    if fib_redraw
+        f_draw_fib()
 
     if fib_active and na(pend_bar)
         int   best_i = na
         float best_d = touch_tol * atr_raw
         for i = 0 to 4
-            float lp = f_lvl_price(i)
+            float lp = f_fib(array.get(FIB_R, i))
             float d = fib_is_up ? math.abs(low - lp) : math.abs(high - lp)
             bool correct_side = fib_is_up ? close > lp : close < lp
             if d <= best_d and correct_side
@@ -274,15 +253,15 @@ if barstate.isconfirmed
         if not na(best_i)
             pend_bar   := bar_index
             pend_lvl   := best_i
-            pend_price := f_lvl_price(best_i)
+            pend_price := f_fib(array.get(FIB_R, best_i))
 
     // ── EXTENSION TARGET TRACKING
     if fib_active and na(extp_bar)
         bool broke_extreme = fib_is_up ? close < fib_lo - break_buf * atr_raw : close > fib_hi + break_buf * atr_raw
         if broke_extreme
             extp_bar  := bar_index
-            extp_t1   := f_ext_price(0)
-            extp_t2   := f_ext_price(1)
+            extp_t1   := f_fib(array.get(FIB_E, 0))
+            extp_t2   := f_fib(array.get(FIB_E, 1))
             extp_hit1 := false
             ext_attempts += 1
 
@@ -294,9 +273,7 @@ if barstate.isconfirmed
             extp_hit1 := true
         if hit2
             ext_hit_2 += 1
-            extp_bar := na
-            f_draw_fib()
-        else if (bar_index - extp_bar) >= ext_window
+        if hit2 or (bar_index - extp_bar) >= ext_window
             extp_bar := na
             f_draw_fib()
 
@@ -327,7 +304,7 @@ if show_hud and barstate.islast
         int t = array.get(lvl_touches, i)
         int b = array.get(lvl_bounces, i)
         string rowlab = str.tostring(array.get(FIB_R, i), "#.###")
-        string rowval = t > 0 ? str.tostring(math.round(float(b) / float(t) * 100.0)) + "%  (n=" + str.tostring(t) + ")" : "—"
+        string rowval = t > 0 ? f_pct(b, t) + "  (n=" + str.tostring(t) + ")" : "—"
         color rc = t == 0 ? C_DIM : float(b) / float(t) >= 0.5 ? C_GREEN : C_RED
         table.cell(hud, 0, 2 + i, rowlab, text_color=i == 3 ? C_AMBER : C_DIM,
                    bgcolor=color.new(i % 2 == 0 ? #1e293b : #0f172a, 40), text_size=11)
@@ -335,7 +312,7 @@ if show_hud and barstate.islast
                    bgcolor=color.new(i % 2 == 0 ? #1e293b : #0f172a, 40),
                    text_size=11, text_halign=text.align_center)
 
-    string e1 = ext_attempts > 0 ? str.tostring(math.round(float(ext_hit_1) / float(ext_attempts) * 100.0)) + "% / " + str.tostring(math.round(float(ext_hit_2) / float(ext_attempts) * 100.0)) + "%" : "—"
+    string e1 = ext_attempts > 0 ? f_pct(ext_hit_1, ext_attempts) + " / " + f_pct(ext_hit_2, ext_attempts) : "—"
     table.cell(hud, 0, 7, "Ext 1.272/1.618", text_color=C_DIM, bgcolor=color.new(#1e293b, 40), text_size=11)
     table.cell(hud, 1, 7, e1 + (ext_attempts > 0 ? "  (n=" + str.tostring(ext_attempts) + ")" : ""),
                text_color=ext_attempts > 0 ? C_GREEN : C_DIM,
@@ -343,8 +320,7 @@ if show_hud and barstate.islast
 
 
 // ALERTS
-bool touch_now = fib_active and not na(pend_bar) and pend_bar == bar_index
-var bool extreme_broken_prev = false
+bool touch_now = not na(pend_bar) and pend_bar == bar_index
 bool extreme_broken_now = not na(extp_bar) and extp_bar == bar_index
 
 alertcondition(touch_now,          "Fib Level Touch",    "D3R Auto Fib: price touched a fibonacci level — check its measured bounce rate")
@@ -376,8 +352,8 @@ shoTF(res) =>
 vwapW = sho_W and shoTF(res_W) ? ta.vwap(src_W, timeframe.change(res_W)) : float(na)
 vwapM = sho_M and shoTF(res_M) ? ta.vwap(src_M, timeframe.change(res_M)) : float(na)
 
-plt1W = plot(vwapW, 'WTD VWAP Line', col_W, math.max(1, wid_W))
-plt1M = plot(vwapM, 'MTD VWAP Line', col_M, math.max(1, wid_M))
+plot(vwapW, 'WTD VWAP Line', col_W, math.max(1, wid_W))
+plot(vwapM, 'MTD VWAP Line', col_M, math.max(1, wid_M))
 
 /////////////Pivot Channel/.////////
 i_pivothigh_len = input.int(21, 'Pivot high length(left, right)', group = 'Pivot points', inline = 'phb')
@@ -438,10 +414,14 @@ while array.size(labels) > 0
 // helper. Every per-side difference is preserved via cmpIsHigh / ext_src /
 // min_sentinel — including the load-bearing old-method sentinel (1e7 for high vs
 // 1e5 for low), the direction of the old-method (lp > high vs lp < low), the count
-// comparison (>= vs <=), and the tie-break direction. The side-specific label push
-// and the distinct persistent var lines (high_trend/low_trend) stay in the callers
-// so their line histories remain independent.
-pivot_channel(array<PivotPoint> pivots, color col, bool cmpIsHigh, float ext_src, float min_sentinel) =>
+// comparison (>= vs <=), and the tie-break direction. The side-specific pivot labels
+// are created here (before the channel search, as before) via lblStyle/lblCol; the
+// distinct persistent var lines (high_trend/low_trend) stay in the callers so their
+// line histories remain independent.
+pivot_channel(array<PivotPoint> pivots, color col, bool cmpIsHigh, float ext_src, float min_sentinel, string lblStyle, color lblCol) =>
+    if i_drawpivots
+        for pivot in pivots
+            array.push(labels, label.new(pivot.index, pivot.price, '', style = lblStyle, size = size.tiny, color = lblCol))
     result = line(na)
     tmp = array.new_line()
     for i = 0 to array.size(pivots) - 1 by 1
@@ -468,18 +448,19 @@ pivot_channel(array<PivotPoint> pivots, color col, bool cmpIsHigh, float ext_src
             cnt = 0
 
             for pivot in pivots
-                matchp = cmpIsHigh ? line.get_price(trend, pivot.index) >= pivot.price : line.get_price(trend, pivot.index) <= pivot.price
-                if matchp
-                    cnt := cnt + 1
+                pp = line.get_price(trend, pivot.index)
+                if cmpIsHigh ? pp >= pivot.price : pp <= pivot.price
+                    cnt += 1
 
             if cnt > best_cnt
                 best_cnt := cnt
                 best_ind := i
 
+            // Tie-break (cnt == best_cnt already, so best_cnt needs no reassignment).
             if cnt == best_cnt
-                tie = cmpIsHigh ? (line.get_price(array.get(tmp, best_ind), bar_index + 1) > line.get_price(trend, bar_index + 1) and line.get_price(trend, bar_index + 1) > ext_src) : (line.get_price(array.get(tmp, best_ind), bar_index + 1) < line.get_price(trend, bar_index + 1) and line.get_price(trend, bar_index + 1) < ext_src)
-                if tie
-                    best_cnt := cnt
+                bp = line.get_price(array.get(tmp, best_ind), bar_index + 1)
+                tp = line.get_price(trend, bar_index + 1)
+                if cmpIsHigh ? (bp > tp and tp > ext_src) : (bp < tp and tp < ext_src)
                     best_ind := i
 
     if not na(best_ind)
@@ -491,45 +472,35 @@ pivot_channel(array<PivotPoint> pivots, color col, bool cmpIsHigh, float ext_src
     result
 
 if array.size(high_pivots) > 1
-    if i_drawpivots
-        for pivot in high_pivots
-            array.push(labels, label.new(pivot.index, pivot.price, '', style = label.style_label_down, size = size.tiny, color = color.new(#99d31b, 70)))
-    high_chosen = pivot_channel(high_pivots, i_hcolor, true, i_hsource, 10000000.0)
+    high_chosen = pivot_channel(high_pivots, i_hcolor, true, i_hsource, 10000000.0, label.style_label_down, color.new(#99d31b, 70))
     if not na(high_chosen)
         line.delete(high_trend)
         high_trend := high_chosen
 
 if array.size(low_pivots) > 1
-    if i_drawpivots
-        for pivot in low_pivots
-            array.push(labels, label.new(pivot.index, pivot.price, '', style = label.style_label_up, size = size.tiny, color = color.new(#FA5032, 70)))
-    low_chosen = pivot_channel(low_pivots, i_lcolor, false, i_lsource, 100000.0)
+    low_chosen = pivot_channel(low_pivots, i_lcolor, false, i_lsource, 100000.0, label.style_label_up, color.new(#FA5032, 70))
     if not na(low_chosen)
         line.delete(low_trend)
         low_trend := low_chosen
 
-if not na(low_trend) and not na(high_trend)
+// Shared trend finisher: recolour the pivot labels at trend t's endpoints, extend and
+// style t, then pull the other line's x1 back to t's x1 if it starts later. Called low
+// then high, exactly the original order (the high pass sees the low-adjusted lines).
+f_fix_trend(line t, line o, color c, int w, string sty) =>
     for l in labels
-        if label.get_x(l) == line.get_x1(low_trend) or label.get_x(l) == line.get_x2(low_trend)
-            label.set_color(l, color.new(#FA5032, 0))
-    line.set_y2(low_trend, line.get_price(low_trend, bar_index + i_trend_extlen))
-    line.set_x2(low_trend, bar_index + i_trend_extlen)
-    line.set_width(low_trend, i_ltrend_width)
-    line.set_style(low_trend, i_ltrend_style)
-    if line.get_x1(high_trend) > line.get_x1(low_trend)
-        line.set_y1(high_trend, line.get_price(high_trend, line.get_x1(low_trend)))
-        line.set_x1(high_trend, line.get_x1(low_trend))
+        if label.get_x(l) == line.get_x1(t) or label.get_x(l) == line.get_x2(t)
+            label.set_color(l, c)
+    line.set_y2(t, line.get_price(t, bar_index + i_trend_extlen))
+    line.set_x2(t, bar_index + i_trend_extlen)
+    line.set_width(t, w)
+    line.set_style(t, sty)
+    if line.get_x1(o) > line.get_x1(t)
+        line.set_y1(o, line.get_price(o, line.get_x1(t)))
+        line.set_x1(o, line.get_x1(t))
 
-    for l in labels
-        if label.get_x(l) == line.get_x1(high_trend) or label.get_x(l) == line.get_x2(high_trend)
-            label.set_color(l, color.new(#99d31b, 0))
-    line.set_y2(high_trend, line.get_price(high_trend, bar_index + i_trend_extlen))
-    line.set_x2(high_trend, bar_index + i_trend_extlen)
-    line.set_width(high_trend, i_htrend_width)
-    line.set_style(high_trend, i_htrend_style)
-    if line.get_x1(low_trend) > line.get_x1(high_trend)
-        line.set_y1(low_trend, line.get_price(low_trend, line.get_x1(high_trend)))
-        line.set_x1(low_trend, line.get_x1(high_trend))
+if not na(low_trend) and not na(high_trend)
+    f_fix_trend(low_trend, high_trend, color.new(#FA5032, 0), i_ltrend_width, i_ltrend_style)
+    f_fix_trend(high_trend, low_trend, color.new(#99d31b, 0), i_htrend_width, i_htrend_style)
 
 var fibs = array.new_line()
 
@@ -579,32 +550,25 @@ lookbackLength = input.int(200, 'Overlay Indicator Display Length', minval = 10,
 cvdSize  = input.float(3.0, 'CVD Size (Height)', minval = 0.1, maxval = 20.0, step = 0.5, inline = 'CVDSZ', group = g, tooltip = 'Vertical size multiplier for the CVD histogram. Higher = taller and more visible. (Works on top of the "Hight" setting.)')
 cvdWidth = input.int(3, 'Bar Width', minval = 1, maxval = 10, inline = 'CVDSZ', group = g, tooltip = 'Thickness of each CVD bar. Higher = thicker and easier to see.')
 
-// Optimized API Calls: Reduced from 26 to 3 conditional calls
+// Optimized API Calls: one set of 3 conditional calls; the exchange prefixes are
+// chosen by Market (Forex vs Crypto). 'Stock' keeps Vsum = 0 as before.
 Vsum = 0.0
-if UltraData
-    if Market == 'Forex'
-        V1 = nz(request.security('FX:' + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
-        V2 = nz(request.security('OANDA:' + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
-        V3 = nz(request.security('FOREXCOM:' + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
-        Vsum := V1 + V2 + V3
-    else if Market == 'Crypto'
-        V1 = nz(request.security('BITSTAMP:' + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
-        V2 = nz(request.security('COINBASE:' + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
-        V3 = nz(request.security('BINANCE:' + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
-        Vsum := V1 + V2 + V3
+if UltraData and Market != 'Stock'
+    isFx = Market == 'Forex'
+    V1 = nz(request.security((isFx ? 'FX:' : 'BITSTAMP:') + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
+    V2 = nz(request.security((isFx ? 'OANDA:' : 'COINBASE:') + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
+    V3 = nz(request.security((isFx ? 'FOREXCOM:' : 'BINANCE:') + syminfo.ticker, timeframe.period, volume, ignore_invalid_symbol = true))
+    Vsum := V1 + V2 + V3
 
 Volume = UltraData ? Vsum : volume
 
-Buying = Volume * ((close - low) / (high - low))
-Selling = Volume * ((high - close) / (high - low))
-
-delta = Buying - Selling
+delta = Volume * ((close - low) / (high - low)) - Volume * ((high - close) / (high - low))
 
 Cumulative = if CumMode == 'Total'
     ta.cum(delta)
 else if CumMode == 'Periodic'
     math.sum(delta, Period)
-else if CumMode == 'EMA'
+else
     ta.ema(delta, Period)
 
 PercentRank = ta.percentrank(Cumulative, NormalizePeriod)
@@ -613,7 +577,6 @@ NormalizedCumulative = PercentRank - 50
 cvdHistogram = UseNormalized ? NormalizedCumulative : Cumulative
 
 var a_lines = array.new_line()
-var a_fill = array.new_linefill()
 
 priceHighest = ta.highest(high, lookbackLength)
 priceLowest = ta.lowest(low, lookbackLength)
@@ -622,28 +585,17 @@ cvdHighest = ta.highest(cvdHistogram, lookbackLength)
 cvdLowest = ta.lowest(cvdHistogram, lookbackLength)
 cvdMaxAbs = math.max(math.abs(cvdHighest), math.abs(cvdLowest))
 
-cvdColor = cvdHistogram >= 0 ? (cvdHistogram[1] < cvdHistogram ? color.new(#006400, Transparency) : color.new(color.green, Transparency)) : (cvdHistogram[1] < cvdHistogram ? color.new(color.red, Transparency) : color.new(#910000, Transparency))
+cvdColor = color.new(cvdHistogram >= 0 ? (cvdHistogram[1] < cvdHistogram ? #006400 : color.green) : (cvdHistogram[1] < cvdHistogram ? color.red : #910000), Transparency)
 
 if barstate.islast and h
-    if array.size(a_lines) > 0
-        for i = 1 to array.size(a_lines) by 1
-            line.delete(array.shift(a_lines))
-
-    if array.size(a_fill) > 0
-        for i = 1 to array.size(a_fill) by 1
-            linefill.delete(array.shift(a_fill))
+    while array.size(a_lines) > 0
+        line.delete(array.shift(a_lines))
 
     priceChangeRate = (priceHighest - priceLowest) / priceHighest / oscHight * cvdSize
+    basePrice = oscPlacement == 'Top' ? priceHighest : priceLowest
 
     for barIndex = 0 to lookbackLength - 1 by 1
-        cvdValue = cvdHistogram[barIndex]
-        basePrice = oscPlacement == 'Top' ? priceHighest : priceLowest
-
-        endPrice = if cvdMaxAbs > 0
-            basePrice * (1 + cvdValue / cvdMaxAbs * priceChangeRate)
-        else
-            basePrice
-
+        endPrice = cvdMaxAbs > 0 ? basePrice * (1 + cvdHistogram[barIndex] / cvdMaxAbs * priceChangeRate) : basePrice
         array.push(a_lines, line.new(x1 = bar_index[barIndex], y1 = basePrice, x2 = bar_index[barIndex], y2 = endPrice, xloc = xloc.bar_index, extend = extend.none, color = cvdColor[barIndex], style = line.style_solid, width = cvdWidth))
 
 //==============================================================================
@@ -801,22 +753,14 @@ f_holdRate(float bot, float top) =>
     [visits, held]
 
 f_clear() =>
-    if array.size(mlsr_boxes) > 0
-        for i = 0 to array.size(mlsr_boxes) - 1
-            box.delete(array.get(mlsr_boxes, i))
-        array.clear(mlsr_boxes)
-    if array.size(tags) > 0
-        for i = 0 to array.size(tags) - 1
-            label.delete(array.get(tags, i))
-        array.clear(tags)
-    if array.size(dots) > 0
-        for i = 0 to array.size(dots) - 1
-            label.delete(array.get(dots, i))
-        array.clear(dots)
-    if array.size(mids) > 0
-        for i = 0 to array.size(mids) - 1
-            line.delete(array.get(mids, i))
-        array.clear(mids)
+    while array.size(mlsr_boxes) > 0
+        box.delete(array.pop(mlsr_boxes))
+    while array.size(tags) > 0
+        label.delete(array.pop(tags))
+    while array.size(dots) > 0
+        label.delete(array.pop(dots))
+    while array.size(mids) > 0
+        line.delete(array.pop(mids))
 
 //--- collect confirmed swing points
 if barstate.isconfirmed
@@ -866,27 +810,28 @@ if barstate.islast and array.size(fp) >= kMin * minPts
     for j = 0 to n - 1
         array.push(logs, math.log(array.get(fp, j)))
 
-    rngLog = math.max(array.max(logs) - array.min(logs), 1e-6)
+    lMin = array.min(logs)
+    lMax = array.max(logs)
+    rngLog = math.max(lMax - lMin, 1e-6)
 
-    //--- the model searches the level count and keeps the cleanest separation
-    bestK = autoK ? kMin : kFix
+    //--- the model searches the level count and keeps the cleanest separation.
+    //--- One loop covers both modes (fixed count = a single kFix pass); silhouette
+    //--- is always >= 0 > -1, so the first pass always seeds cent/bestSil.
     bestSil = -1.0
-    cent = autoK ? array.new<float>(1, 0.0) : f_kmeans(logs, kFix, passes)
-    if autoK
-        for kk = kMin to math.min(kMax, int(n / minPts))
-            cTry = f_kmeans(logs, kk, passes)
-            s = f_silhouette(logs, cTry)
-            if s > bestSil
-                bestSil := s
-                bestK := kk
-                cent := cTry
-    else
-        bestSil := f_silhouette(logs, cent)
+    cent = array.new<float>(1, 0.0)
+    for kk = (autoK ? kMin : kFix) to (autoK ? math.min(kMax, int(n / minPts)) : kFix)
+        cTry = f_kmeans(logs, kk, passes)
+        s = f_silhouette(logs, cTry)
+        if s > bestSil
+            bestSil := s
+            cent := cTry
     nK = array.size(cent)
 
     //--- membership, extents and rejection of groups too sparse to be a level
-    cLo  = array.new<float>(nK, 0.0)
-    cHi  = array.new<float>(nK, 0.0)
+    // Sentinels instead of a first-member branch: cLo/cHi are only read for clusters
+    // with >= minPts members, and log prices are far inside +/-1e9.
+    cLo  = array.new<float>(nK, 1e9)
+    cHi  = array.new<float>(nK, -1e9)
     cSum = array.new<float>(nK, 0.0)
     cCnt = array.new<int>(nK, 0)
     cFst = array.new<int>(nK, bar_index)
@@ -895,9 +840,6 @@ if barstate.islast and array.size(fp) >= kMin * minPts
         v = array.get(logs, j)
         c = f_nearest(cent, v)
         array.set(cid, j, c)
-        if array.get(cCnt, c) == 0
-            array.set(cLo, c, v)
-            array.set(cHi, c, v)
         array.set(cLo, c, math.min(array.get(cLo, c), v))
         array.set(cHi, c, math.max(array.get(cHi, c), v))
         array.set(cSum, c, array.get(cSum, c) + v)
@@ -952,22 +894,17 @@ if barstate.islast and array.size(fp) >= kMin * minPts
 
     //--- raw distribution of swing points across price, the input the model sees
     if showProf and n > 1
-        loL = array.min(logs)
-        hiL = array.max(logs)
-        span = math.max(hiL - loL, 1e-9)
+        span = math.max(lMax - lMin, 1e-9)
         bins = array.new<int>(profBins, 0)
         for j = 0 to n - 1
-            bi = math.max(0, math.min(profBins - 1, int((array.get(logs, j) - loL) / span * profBins)))
+            bi = math.max(0, math.min(profBins - 1, int((array.get(logs, j) - lMin) / span * profBins)))
             array.set(bins, bi, array.get(bins, bi) + 1)
-        mb = 1
-        for i2 = 0 to profBins - 1
-            if array.get(bins, i2) > mb
-                mb := array.get(bins, i2)
+        mb = math.max(1, int(array.max(bins)))
         for i2 = 0 to profBins - 1
             v = array.get(bins, i2)
             if v > 0
-                pb = math.exp(loL + span * i2 / profBins)
-                pt = math.exp(loL + span * (i2 + 1) / profBins)
+                pb = math.exp(lMin + span * i2 / profBins)
+                pt = math.exp(lMin + span * (i2 + 1) / profBins)
                 ln = math.max(1, int(profW * v / mb))
                 pc = (pb + pt) / 2 < close ? supCol : resCol
                 array.push(mlsr_boxes, box.new(bar_index - ln, pt, bar_index, pb, bgcolor = color.new(pc, 82), border_color = color.new(pc, 100)))
@@ -994,50 +931,44 @@ if barstate.islast and array.size(fp) >= kMin * minPts
         row := 2
 
     maxCnt = 1
-    if array.size(pick) > 0
-        for s = 0 to array.size(pick) - 1
-            maxCnt := math.max(maxCnt, array.get(cCnt, array.get(pick, s)))
+    for c in pick
+        maxCnt := math.max(maxCnt, array.get(cCnt, c))
 
-    if array.size(pick) > 0
-        for s = 0 to array.size(pick) - 1
-            c = array.get(pick, s)
-            cnt = array.get(cCnt, c)
-            ctr = math.exp(array.get(cSum, c) / cnt)
-            top = math.exp(array.get(cHi, c))
-            bot = math.exp(array.get(cLo, c))
-            half = math.max((top - bot) / 2, ctr * minWIn / 100)
-            half := math.min(half, ctr * maxWIn / 100)
-            half := math.min(half, ctr * (math.exp(rngLog * maxWRng / 200) - 1))
-            top := ctr + half
-            bot := ctr - half
-            isSup = ctr < close
-            col = isSup ? supCol : resCol
-            fill = math.round(92 - 18 * cnt / maxCnt)
-            lft = array.get(cFst, c)
-            rgt = bar_index + extBars
-            if softEdge
-                array.push(mlsr_boxes, box.new(lft, ctr + half * 1.3, rgt, ctr - half * 1.3, bgcolor = color.new(col, math.min(96, fill + 5)), border_color = color.new(col, 100)))
-                array.push(mlsr_boxes, box.new(lft, top, rgt, bot, bgcolor = color.new(col, fill), border_color = color.new(col, 100)))
-                array.push(mlsr_boxes, box.new(lft, ctr + half * 0.45, rgt, ctr - half * 0.45, bgcolor = color.new(col, math.max(62, fill - 16)), border_color = color.new(col, 100)))
-            else
-                array.push(mlsr_boxes, box.new(lft, top, rgt, bot, bgcolor = color.new(col, fill), border_color = color.new(col, 45), border_width = 1))
+    wCap = math.exp(rngLog * maxWRng / 200) - 1
+    for c in pick
+        cnt = array.get(cCnt, c)
+        ctr = math.exp(array.get(cSum, c) / cnt)
+        half = math.min(math.max((math.exp(array.get(cHi, c)) - math.exp(array.get(cLo, c))) / 2, ctr * minWIn / 100), ctr * maxWIn / 100, ctr * wCap)
+        top = ctr + half
+        bot = ctr - half
+        isSup = ctr < close
+        col = isSup ? supCol : resCol
+        fill = math.round(92 - 18 * cnt / maxCnt)
+        lft = array.get(cFst, c)
+        rgt = bar_index + extBars
+        // Soft edges: k = 0 (outer 1.3x halo), 1 (body, 1.0x), 2 (dense 0.45x core).
+        // Hard edge: k = 1 only, with a visible border. box.new's border_width defaults to 1.
+        for k = (softEdge ? 0 : 1) to (softEdge ? 2 : 1)
+            hm = k == 0 ? 1.3 : k == 1 ? 1.0 : 0.45
+            array.push(mlsr_boxes, box.new(lft, ctr + half * hm, rgt, ctr - half * hm, bgcolor = color.new(col, k == 0 ? math.min(96, fill + 5) : k == 1 ? fill : math.max(62, fill - 16)), border_color = color.new(col, softEdge ? 100 : 45)))
 
-            if showMid
-                array.push(mids, line.new(lft, ctr, rgt, ctr, color = color.new(col, 25), style = line.style_dotted, width = 1))
+        if showMid
+            array.push(mids, line.new(lft, ctr, rgt, ctr, color = color.new(col, 25), style = line.style_dotted, width = 1))
 
-            array.push(tags, label.new(rgt, ctr, str.tostring(math.round_to_mintick(ctr)) + "  " + str.tostring(cnt), style = label.style_label_left, color = color.new(col, 15), textcolor = color.white, size = txtSize))
+        ctrS = str.tostring(math.round_to_mintick(ctr))
+        array.push(tags, label.new(rgt, ctr, ctrS + "  " + str.tostring(cnt), style = label.style_label_left, color = color.new(col, 15), textcolor = color.white, size = txtSize))
 
-            if showTable and showStats and row <= 23
-                [visits, held] = f_holdRate(bot, top)
-                table.cell(stat, 0, row, str.tostring(math.round_to_mintick(ctr)), text_color = col, text_size = txtSize)
-                table.cell(stat, 1, row, str.tostring(cnt), text_color = col, text_size = txtSize)
-                table.cell(stat, 2, row, visits > 0 ? str.tostring(held) + "/" + str.tostring(visits) : "-", text_color = col, text_size = txtSize)
-                row += 1
+        if showTable and showStats and row <= 23
+            [visits, held] = f_holdRate(bot, top)
+            table.cell(stat, 0, row, ctrS, text_color = col, text_size = txtSize)
+            table.cell(stat, 1, row, str.tostring(cnt), text_color = col, text_size = txtSize)
+            table.cell(stat, 2, row, visits > 0 ? str.tostring(held) + "/" + str.tostring(visits) : "-", text_color = col, text_size = txtSize)
+            row += 1
 
-            if low <= top and high >= bot and not (low[1] <= top and high[1] >= bot)
-                touched := true
-            if (isSup and close < bot and close[1] >= bot) or (not isSup and close > top and close[1] <= top)
-                brokeZ := true
+        if low <= top and high >= bot and not (low[1] <= top and high[1] >= bot)
+            touched := true
+        if (isSup and close < bot and close[1] >= bot) or (not isSup and close > top and close[1] <= top)
+            brokeZ := true
 
 if barstate.islast and barstate.isconfirmed
     if touched
